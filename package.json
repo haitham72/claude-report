@@ -1,0 +1,227 @@
+{
+  "name": "claude-report",
+  "displayName": "Claude Report",
+  "description": "Claude Code and Codex usage in your editor: live plan gauges, a Metrics view, and monthly AI achievement reports per project. Reads local transcripts, no telemetry.",
+  "version": "0.11.0",
+  "publisher": "haitham72",
+  "license": "MIT",
+  "engines": {
+    "vscode": "^1.75.0",
+    "node": ">=18"
+  },
+  "categories": [
+    "AI",
+    "Visualization",
+    "Other"
+  ],
+  "activationEvents": [
+    "onStartupFinished"
+  ],
+  "main": "./extension.js",
+  "scripts": {
+    "package": "node -e \"require('node:fs').mkdirSync('dist', { recursive: true })\" && npx --yes @vscode/vsce package --no-dependencies --out dist",
+    "scan": "node src/cli.js scan",
+    "test": "node --test"
+  },
+  "contributes": {
+    "viewsContainers": {
+      "activitybar": [
+        {
+          "id": "claudeReport",
+          "title": "Claude Report",
+          "icon": "media/icon.svg"
+        }
+      ]
+    },
+    "views": {
+      "claudeReport": [
+        {
+          "type": "webview",
+          "id": "claudeReport.metrics",
+          "name": "Claude Report"
+        }
+      ]
+    },
+    "commands": [
+      {
+        "command": "claudeReport.openMetrics",
+        "title": "Claude Report: Open Metrics"
+      },
+      {
+        "command": "claudeReport.refresh",
+        "title": "Claude Report: Reload",
+        "icon": "$(refresh)"
+      },
+      {
+        "command": "claudeReport.createReport",
+        "title": "Claude Report: Create Monthly Report",
+        "icon": "$(file-text)"
+      },
+      {
+        "command": "claudeReport.installHook",
+        "title": "Claude Report: Connect Claude Code"
+      },
+      {
+        "command": "claudeReport.uninstallHook",
+        "title": "Claude Report: Disconnect Claude Code"
+      },
+      {
+        "command": "claudeReport.diagnose",
+        "title": "Claude Report: Diagnose Status Bar"
+      },
+      {
+        "command": "claudeReport.restart",
+        "title": "Claude Report: Restart Extension"
+      }
+    ],
+    "configuration": {
+      "title": "Claude Report",
+      "properties": {
+        "claudeReport.reportModel": {
+          "type": "string",
+          "enum": [
+            "haiku",
+            "sonnet",
+            "opus"
+          ],
+          "default": "haiku",
+          "description": "Model for each per-project summary."
+        },
+        "claudeReport.reportEffort": {
+          "type": "string",
+          "enum": [
+            "low",
+            "medium",
+            "high"
+          ],
+          "default": "medium",
+          "description": "Effort for each per-project summary."
+        },
+        "claudeReport.finalizerModel": {
+          "type": "string",
+          "enum": [
+            "haiku",
+            "sonnet",
+            "opus"
+          ],
+          "default": "sonnet",
+          "description": "Model for the monthly overview."
+        },
+        "claudeReport.finalizerEffort": {
+          "type": "string",
+          "enum": [
+            "low",
+            "medium",
+            "high"
+          ],
+          "default": "high",
+          "description": "Effort for the monthly overview."
+        },
+        "claudeReport.statusBarSide": {
+          "type": "string",
+          "enum": [
+            "left",
+            "right"
+          ],
+          "default": "left",
+          "description": "Which end of the status bar shows the gauges. Reload the window after changing it."
+        },
+        "claudeReport.export.save": {
+          "type": "boolean",
+          "default": true,
+          "description": "Save a copy of the report after creating it."
+        },
+        "claudeReport.export.folder": {
+          "type": "string",
+          "default": "",
+          "description": "Folder for the saved copy. Empty means your Downloads folder."
+        },
+        "claudeReport.export.estimateTime": {
+          "type": "boolean",
+          "default": false,
+          "description": "Include optional AI time estimates for report examples. Time you enter takes precedence."
+        },
+        "claudeReport.export.depth": {
+          "type": "string",
+          "enum": ["quick", "deep"],
+          "default": "quick",
+          "description": "Run the normal report or add a separate Deep prompting review."
+        },
+        "claudeReport.export.deepEffort": {
+          "type": "string",
+          "enum": ["low", "medium", "high"],
+          "default": "medium",
+          "description": "Evidence depth for each project review. Reviews can be reused when their evidence is unchanged."
+        },
+        "claudeReport.deep.cloudContext": {
+          "type": "integer",
+          "default": 200000,
+          "minimum": 2048,
+          "maximum": 1000000,
+          "description": "Context window to plan for in Claude Code Cloud when running Deep review. Use the context supported by your configured model and plan."
+        },
+        "claudeReport.export.outlook": {
+          "type": "boolean",
+          "default": false,
+          "description": "Open an email draft with the report attached after creating it (Outlook)."
+        },
+        "claudeReport.export.to": {
+          "type": "string",
+          "default": "",
+          "description": "Recipient for the email draft."
+        },
+        "claudeReport.export.subject": {
+          "type": "string",
+          "default": "AI report, {label}, {user}",
+          "description": "Subject of the email draft. {month}, {label} and {user} are replaced."
+        },
+        "claudeReport.export.body": {
+          "type": "string",
+          "default": "",
+          "description": "Body of the email draft. Empty uses a short default with the Summary, Goal and Achievement."
+        },
+        "claudeReport.export.format": {
+          "type": "string",
+          "enum": [
+            "html",
+            "pdf"
+          ],
+          "default": "html",
+          "description": "File format of the saved and attached report. PDF needs Microsoft Edge or Google Chrome."
+        }
+      }
+    }
+  },
+  "icon": "media/icon.png",
+  "homepage": "https://github.com/haitham72/claude-report#readme",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/haitham72/claude-report.git"
+  },
+  "bugs": {
+    "url": "https://github.com/haitham72/claude-report/issues"
+  },
+  "keywords": [
+    "claude",
+    "claude code",
+    "codex",
+    "anthropic",
+    "sessions",
+    "usage",
+    "plan usage",
+    "tokens",
+    "report",
+    "ai report",
+    "status bar",
+    "metrics",
+    "lm studio",
+    "ollama",
+    "productivity"
+  ],
+  "galleryBanner": {
+    "color": "#1c1c1e",
+    "theme": "dark"
+  },
+  "preview": true,
+  "markdown": "github"
+}

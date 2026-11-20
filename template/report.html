@@ -1,0 +1,560 @@
+<title>AI Report</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<style>
+/* One quiet column: overview, usage, projects, prompting and evidence are separate sections behind a sticky nav. Project colours appear only as dots and chart series; everything else is neutral. */
+:root{--bg:#f6f6f8;--card:#ffffff;--fg:#111114;--sec:#5b5b62;--line:#e3e3e8;--fill:#eeeef2;--accent:#0a5fd0;--ok:#1a7f37;--warn:#955500;--other:#8e8e96;
+--c0:#2f6fed;--c1:#12a150;--c2:#e08600;--c3:#d6336c;--c4:#8a4fd6;--c5:#0f9eb0;--c6:#5a5ad6;--c7:#a07a2c;
+--font:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,"Helvetica Neue",Arial,sans-serif;color-scheme:light}
+@media screen and (prefers-color-scheme:dark){:root:not([data-theme="light"]){--bg:#0e0e10;--card:#18181b;--fg:#f2f2f5;--sec:#a8a8b0;--line:#2c2c31;--fill:#232328;--accent:#6cb0ff;--ok:#5fd07a;--warn:#f0b24a;--other:#7d7d86;
+--c0:#5b8dff;--c1:#34c274;--c2:#f0a030;--c3:#ee5a90;--c4:#b27cf0;--c5:#3cc0d2;--c6:#8484f0;--c7:#c9a24e;color-scheme:dark}}
+@media screen{:root[data-theme="dark"]{--bg:#0e0e10;--card:#18181b;--fg:#f2f2f5;--sec:#a8a8b0;--line:#2c2c31;--fill:#232328;--accent:#6cb0ff;--ok:#5fd07a;--warn:#f0b24a;--other:#7d7d86;
+--c0:#5b8dff;--c1:#34c274;--c2:#f0a030;--c3:#ee5a90;--c4:#b27cf0;--c5:#3cc0d2;--c6:#8484f0;--c7:#c9a24e;color-scheme:dark}}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--fg);font:14px/1.5 var(--font);-webkit-font-smoothing:antialiased}
+.wrap{max-width:880px;margin:0 auto;padding:0 max(16px,env(safe-area-inset-right,0px)) 40px max(16px,env(safe-area-inset-left,0px))}
+a{color:var(--accent)}
+button,select{font:inherit;color:inherit}
+:focus-visible{outline:2px solid var(--accent);outline-offset:2px;border-radius:6px}
+header{display:flex;flex-wrap:wrap;align-items:flex-end;justify-content:space-between;gap:8px 16px;padding:22px 0 14px}
+h1{font-size:22px;line-height:1.2;margin:0;letter-spacing:-.01em}
+.sub{margin:2px 0 0;color:var(--sec);font-size:13px}
+.theme{display:flex;align-items:center;gap:6px;color:var(--sec);font-size:12.5px}
+.theme select,#chart-project{border:1px solid var(--line);background:var(--card);border-radius:8px;padding:4px 8px}
+nav.sections{position:sticky;top:0;z-index:5;display:flex;gap:4px;overflow-x:auto;margin:0 -16px;padding:8px 16px;background:color-mix(in srgb,var(--bg) 94%,transparent);border-bottom:1px solid var(--line)}
+nav.sections a{padding:6px 12px;border-radius:999px;color:var(--sec);font-weight:600;font-size:13px;text-decoration:none;white-space:nowrap}
+nav.sections a:hover{background:var(--fill);color:var(--fg)}
+section.block{margin-top:30px;scroll-margin-top:60px}
+.title{display:flex;align-items:baseline;justify-content:space-between;gap:12px;margin:0 0 10px}
+h2{margin:0;font-size:12px;font-weight:700;letter-spacing:.07em;text-transform:uppercase;color:var(--sec)}
+.card{background:var(--card);border:1px solid var(--line);border-radius:14px}
+.muted{color:var(--sec)}
+.kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:8px;margin-top:6px}
+.kpi{padding:12px 14px}
+.kpi b{display:block;font-size:24px;line-height:1.15;font-variant-numeric:tabular-nums;letter-spacing:-.01em}
+.kpi span{display:block;color:var(--sec);font-size:12.5px}
+.ov-row{display:grid;grid-template-columns:104px 1fr;gap:4px 16px;padding:12px 16px;border-top:1px solid var(--line)}
+.ov-row:first-child{border-top:0}
+.ov-row dt{color:var(--sec);font-size:12.5px;font-weight:600}
+.ov-row dd{margin:0;font-size:15px}
+.outcome{margin:6px 0 0;font-size:12.5px;color:var(--sec)}
+.notice{padding:10px 16px;font-size:13px;border-top:1px solid var(--line)}
+.notice ul{margin:4px 0 0;padding-left:18px}
+@media (max-width:560px){.ov-row{grid-template-columns:1fr}}
+.chartcard{position:relative;padding:12px 14px 10px}
+.chartbar{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:6px}
+#chart{width:100%;display:block}
+#chart text{font-family:var(--font);font-size:10.5px;fill:var(--sec)}
+#chart [data-n]{transition:opacity .12s}
+#chart.hov [data-n]{opacity:.2}
+#chart.hov [data-n].on{opacity:1}
+.legend{display:flex;flex-wrap:wrap;gap:4px 6px;margin-top:8px}
+.lg{display:inline-flex;align-items:center;gap:6px;border:1px solid transparent;background:none;border-radius:999px;padding:2px 9px;font-size:12.5px;color:var(--sec);cursor:pointer}
+.lg:hover,.lg[aria-pressed="true"]{background:var(--fill);color:var(--fg)}
+.legend.hov .lg:not(.on){opacity:.45}
+.dot{display:inline-block;width:9px;height:9px;border-radius:50%;background:var(--pc);flex:none}
+.split{margin:8px 0 0;color:var(--sec);font-size:12.5px}
+.tip{position:absolute;pointer-events:none;background:var(--card);color:var(--fg);border:1px solid var(--line);border-radius:8px;padding:3px 9px;font-size:12px;white-space:nowrap;box-shadow:0 2px 8px rgba(0,0,0,.18);z-index:2}
+.tip[hidden]{display:none}
+details.tbl{margin-top:8px;font-size:12.5px}
+.scroll{overflow-x:auto;margin-top:6px}
+table{border-collapse:collapse;width:100%;font-variant-numeric:tabular-nums}
+th,td{padding:4px 10px;text-align:right;border-bottom:1px solid var(--line);white-space:nowrap}
+th:first-child,td:first-child{text-align:left}
+summary{cursor:pointer;list-style:none}
+summary::-webkit-details-marker{display:none}
+.link{color:var(--accent);font-weight:600;font-size:13px}
+.expand{background:none;border:0;color:var(--accent);font-weight:600;font-size:13px;cursor:pointer;padding:2px 4px}
+.key{margin:0 0 10px;color:var(--sec);font-size:12.5px}
+.rows{display:grid;gap:8px}
+.proj>summary{display:grid;grid-template-columns:34px minmax(0,1fr) auto;align-items:center;gap:6px 12px;padding:12px 40px 12px 14px;position:relative}
+.proj>summary::after{content:"";position:absolute;right:18px;top:20px;width:7px;height:7px;border-right:2px solid var(--sec);border-bottom:2px solid var(--sec);transform:rotate(45deg);transition:transform .15s}
+.proj[open]>summary::after{transform:rotate(-135deg);top:23px}
+.pname{display:flex;align-items:center;gap:8px;min-width:0;font-weight:700;overflow-wrap:anywhere}
+.ptxt{display:flex;flex-direction:column;gap:1px;min-width:0}
+.advgrid{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:8px}
+.adv{padding:14px 16px;border-top:3px solid var(--k)}
+.adv.s{--k:var(--ok)}.adv.w{--k:var(--warn)}.adv.t{--k:var(--accent)}
+.advk{display:block;margin-bottom:6px;font-size:12px;font-weight:700;letter-spacing:.07em;text-transform:uppercase;color:var(--k)}
+.adv p{margin:0;font-size:15px}.adv .evid{margin-top:8px;font-size:12.5px}
+.advlinks{margin:10px 0 0;font-size:13px;display:flex;flex-wrap:wrap;gap:4px 14px}
+.pico{width:34px;height:34px;border-radius:10px;flex:none;display:grid;place-items:center;color:var(--pc);background:color-mix(in srgb,var(--pc) 15%,var(--card))}
+.pico svg{width:20px;height:20px;fill:none;stroke:currentColor;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}
+.pmeta{color:var(--sec);font-size:12.5px;font-variant-numeric:tabular-nums;white-space:nowrap}
+.pbar{grid-column:1/-1;height:3px;border-radius:2px;background:var(--fill);overflow:hidden}
+.pbar i{display:block;height:100%;background:var(--pc);border-radius:2px}
+.pone{color:var(--sec);font-size:13px;display:-webkit-box;-webkit-line-clamp:1;-webkit-box-orient:vertical;overflow:hidden}
+.proj[open] .pone{display:block;color:var(--fg)}
+.pchips{grid-column:2/-1;display:flex;flex-wrap:wrap;gap:4px}
+.plain{display:flex;justify-content:space-between;gap:12px;padding:10px 16px;font-size:13px}
+.pbody{padding:2px 16px 14px;border-top:1px solid var(--line)}
+.pbody h4,.rev h4{margin:14px 0 4px;font-size:12px;font-weight:700;letter-spacing:.05em;text-transform:uppercase;color:var(--sec)}
+.pbody ul,.rev ul{margin:0;padding-left:18px}
+.pbody li,.rev li{margin:2px 0}
+.chip{display:inline-block;border:1px solid var(--line);border-radius:999px;padding:0 8px;font-size:11.5px;font-weight:700;line-height:20px;white-space:nowrap}
+.chip.requested{color:var(--sec)}
+.chip.recorded{color:var(--warn);border-color:color-mix(in srgb,var(--warn) 45%,var(--line))}
+.chip.verified{color:var(--ok);border-color:color-mix(in srgb,var(--ok) 45%,var(--line))}
+.ex{padding:12px 0;border-top:1px solid var(--line)}
+.ex:first-of-type{border-top:0}
+.ex h5{margin:0;font-size:14px;display:flex;flex-wrap:wrap;gap:4px 8px;align-items:center}
+.ex p{margin:4px 0 0}
+.evid{color:var(--sec);font-size:12.5px;overflow-wrap:anywhere}
+.lbl{font-weight:700;margin-right:4px}
+.time{margin-top:6px;font-size:12.5px;color:var(--sec);display:grid;gap:3px;max-width:340px;font-variant-numeric:tabular-nums}
+.time .tr{display:grid;grid-template-columns:90px 1fr;gap:8px;align-items:center}
+.tb{height:5px;border-radius:3px;background:var(--fill);overflow:hidden}
+.tb i{display:block;height:100%;border-radius:3px}
+.tb .w{background:var(--other)}
+.tb .a{background:var(--pc)}
+.cols{display:grid;grid-template-columns:repeat(auto-fit,minmax(230px,1fr));gap:0 20px}
+details.rest{margin-top:8px}
+details.rest>summary{padding:10px 16px;text-align:center}
+details.rest>.rows{margin-top:8px}
+.synth{padding:14px 16px;font-size:15px}
+.synth p{margin:0}
+.meta{color:var(--sec);font-size:12.5px;margin:4px 0 0}
+.rev>summary{display:flex;justify-content:space-between;gap:12px;padding:12px 16px;font-weight:700}
+.rev>summary span{font-weight:400;color:var(--sec);font-size:12.5px}
+.rev .rbody{padding:0 16px 14px;border-top:1px solid var(--line)}
+.rev p{margin:6px 0 0}
+q{quotes:"\201C" "\201D";font-style:italic}
+.ref{color:var(--sec);font-size:12px;display:block}
+.tag{font-size:11.5px;color:var(--sec);border:1px solid var(--line);border-radius:6px;padding:0 6px;margin-left:6px;font-weight:400}
+.git>summary{display:flex;justify-content:space-between;gap:12px;padding:12px 16px;font-weight:700}
+.git>summary span{font-weight:400;color:var(--sec);font-size:12.5px}
+.git .gbody{padding:0 16px 12px;border-top:1px solid var(--line)}
+.git ul{margin:6px 0;padding-left:0;list-style:none}
+.git li{margin:4px 0;overflow-wrap:anywhere}
+.git code,.git time{color:var(--sec);font-size:12px}
+.method{padding:12px 16px;font-size:13px}
+.method ul{margin:6px 0 0;padding-left:18px}
+.foot{margin:28px 0 0;color:var(--sec);font-size:12px;text-align:center}
+@media (max-width:560px){.proj>summary{grid-template-columns:34px minmax(0,1fr)}.pmeta{grid-column:2;white-space:normal}.pchips{grid-column:2}.git>summary,.rev>summary{flex-wrap:wrap;gap:2px 12px}nav.sections a{padding:6px 9px}}
+@media (prefers-reduced-motion:reduce){*{transition:none!important}}
+@media print{
+:root,:root[data-theme]{--bg:#fff;--card:#fff;--fg:#111;--sec:#555;--line:#ccc;--fill:#eee;--accent:#0a5fd0;--ok:#146c2e;--warn:#7a4500;--other:#8e8e96;
+--c0:#2f6fed;--c1:#12a150;--c2:#e08600;--c3:#d6336c;--c4:#8a4fd6;--c5:#0f9eb0;--c6:#5a5ad6;--c7:#a07a2c;color-scheme:light}
+body{background:#fff}
+nav.sections,.theme,.expand,.tip,.proj>summary::after,details.rest>summary,details.tbl{display:none}
+.card{break-inside:avoid;border-color:#ccc}
+.proj,.rev,.git{break-inside:auto}
+.proj .pone{display:block;-webkit-line-clamp:unset}
+section.block{margin-top:18px}
+.lg{border:0}}
+</style>
+<div class="wrap" id="app"></div>
+<script type="application/json" id="report-data">__DATA__</script>
+<script>
+(function () {
+  var D = JSON.parse(document.getElementById('report-data').textContent);
+  var app = document.getElementById('app');
+  var arr = function (x) { return Array.isArray(x) ? x : []; };
+  var esc = function (s) { return String(s == null ? '' : s).replace(/[&<>"]/g, function (c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]; }); };
+  var human = function (n) { return n >= 1e9 ? (n / 1e9).toFixed(1).replace('.0', '') + 'B' : n >= 1e6 ? (Math.round(n / 1e5) / 10) + 'M' : n >= 1e3 ? Math.round(n / 1e3) + 'K' : String(n || 0); };
+  var hrs = function (h) { return h < 1 ? Math.round(h * 60) + ' min' : (Math.round(h * 10) / 10) + ' h'; };
+  var plural = function (n, one, many) { return n + ' ' + (n === 1 ? one : (many || one + 's')); };
+  var MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+  var shortDay = function (d) { var p = d.split('-'); return +p[2] + ' ' + MONTHS[+p[1] - 1]; };
+  // Every recorded time in the report is shown in UTC, the same convention the project examples use.
+  var utc = function (iso) { var d = new Date(iso); return isFinite(+d) ? d.toISOString().slice(0, 16).replace('T', ' ') + 'Z' : ''; };
+  var slug = function (n) { return 'p-' + String(n).replace(/[^A-Za-z0-9]+/g, '-'); };
+  var projectKey = function (p) { return p.id || p.name; };
+
+  // Projects are ranked by tokens. The first eight own a colour, the rest share one neutral colour.
+  var TOP = 8, LIMIT = 6;
+  var P = arr(D.projects).slice().sort(function (a, b) { return (b.tokens || 0) - (a.tokens || 0); });
+  P.forEach(function (p, i) { p._c = i < TOP ? 'var(--c' + i + ')' : 'var(--other)'; });
+  var pc = function (p) { return 'style="--pc:' + p._c + '"'; };
+  // Built-in icons: small inline SVG shapes, so the report stays one file and needs no download.
+  var ICONS = {
+    code: '<path d="M8 8l-4 4 4 4M16 8l4 4-4 4M13.5 5l-3 14"/>',
+    terminal: '<path d="M4 6h16v12H4zM7 10l3 2-3 2M12 15h5"/>',
+    bolt: '<path d="M13 3L5 13h6l-1 8 8-10h-6z"/>',
+    chart: '<path d="M5 20V10M12 20V4M19 20v-7"/>',
+    layers: '<path d="M12 4l8 4-8 4-8-4zM4 12l8 4 8-4M4 16l8 4 8-4"/>',
+    cube: '<path d="M12 3l8 4.5v9L12 21l-8-4.5v-9zM12 12l8-4.5M12 12v9M12 12L4 7.5"/>',
+    grid: '<path d="M4 4h6v6H4zM14 4h6v6h-6zM4 14h6v6H4zM14 14h6v6h-6z"/>',
+    doc: '<path d="M7 3h7l4 4v14H7zM14 3v4h4M10 12h5M10 16h5"/>',
+    folder: '<path d="M3 7h6l2 2h10v10H3z"/>',
+    globe: '<circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3c3 3 3 15 0 18M12 3c-3 3-3 15 0 18"/>',
+    star: '<path d="M12 3l2.7 5.6 6.1.9-4.4 4.3 1 6.1L12 17l-5.4 2.9 1-6.1L3.2 9.5l6.1-.9z"/>',
+    hexagon: '<path d="M12 3l8 4.5v9L12 21l-8-4.5v-9z"/>',
+    diamond: '<path d="M12 3l9 9-9 9-9-9z"/>',
+    triangle: '<path d="M12 4l9 16H3z"/>',
+    ring: '<circle cx="12" cy="12" r="8"/><circle cx="12" cy="12" r="3"/>',
+    wave: '<path d="M3 12c3-6 6-6 9 0s6 6 9 0"/>',
+    chat: '<path d="M4 5h16v11H9l-5 4z"/>',
+    database: '<ellipse cx="12" cy="6" rx="7" ry="3"/><path d="M5 6v12c0 1.7 3.1 3 7 3s7-1.3 7-3V6M5 12c0 1.7 3.1 3 7 3s7-1.3 7-3"/>',
+    sun: '<circle cx="12" cy="12" r="3"/><path d="M12 3v3M12 18v3M3 12h3M18 12h3M5.6 5.6l2.1 2.1M16.3 16.3l2.1 2.1M18.4 5.6l-2.1 2.1M7.7 16.3l-2.1 2.1"/>',
+    mail: '<path d="M3 6h18v12H3zM3 7l9 7 9-7"/>',
+    shield: '<path d="M12 3l8 3v6c0 5-3.5 8-8 9-4.5-1-8-4-8-9V6z"/>',
+    phone: '<path d="M8 3h8v18H8zM11 18h2"/>',
+    leaf: '<path d="M5 19C5 10 10 5 20 4c0 10-5 15-14 15zM5 19l8-8"/>',
+    cloud: '<path d="M7 18a4 4 0 010-8 5 5 0 019.6-1A4.5 4.5 0 0117 18z"/>'
+  };
+  var ICON_NAMES = Object.keys(ICONS);
+  // A project name can hint at its kind; anything else gets a stable shape from its name.
+  var HINTS = [[/doc|report|writing|blog/i, 'doc'], [/api|server|backend|database|sql/i, 'database'], [/web|site|page|landing/i, 'globe'], [/mobile|ios|android|app\b/i, 'phone'], [/mail|newsletter/i, 'mail'],
+    [/test|qa|security/i, 'shield'], [/data|analytics|metric|dashboard/i, 'chart'], [/cli|terminal|script|tool/i, 'terminal'], [/design|ui|ux|brand/i, 'layers']];
+  var iconName = function (p) {
+    var key = projectKey(p);
+    for (var i = 0; i < HINTS.length; i++) if (HINTS[i][0].test(p.name)) return HINTS[i][1];
+    var h = 0;
+    for (var j = 0; j < key.length; j++) h = (h * 31 + key.charCodeAt(j)) >>> 0;
+    return ICON_NAMES[h % ICON_NAMES.length];
+  };
+  var iconSvg = function (name) { return '<svg viewBox="0 0 24 24" aria-hidden="true">' + ICONS[name] + '</svg>'; };
+  // Advice links come from a fixed list in the extension; the page still shows only official Claude documentation addresses.
+  var SAFE_LINK = /^https:\/\/(?:platform|code)\.claude\.com\//;
+  // Advice is coaching on how the person prompts, so it is its own section and not part of the achievement overview.
+  function adviceSection(a) {
+    var tile = function (cls, label, it) {
+      return '<div class="card adv ' + cls + '"><span class="advk">' + label + '</span><p>' + esc(it.text) + '</p>' + (it.evidence ? '<p class="evid"><span class="lbl">Seen in</span>' + esc(it.evidence) + '</p>' : '') + '</div>';
+    };
+    var links = arr(a.links).filter(function (l) { return l && SAFE_LINK.test(l.url || ''); }).map(function (l) { return '<a href="' + esc(l.url) + '" target="_blank" rel="noopener noreferrer">' + esc(l.title) + '</a>'; }).join('');
+    return '<section class="block" id="advice"><div class="title"><h2>Advice</h2>' + (a.firstLook ? '<span class="chip requested">First look · ' + plural(a.prompts || 0, 'prompt') + '</span>' : '') + '</div>' +
+      '<p class="key">How you wrote your prompts, separate from what was achieved. It describes habits and gives no scores.</p>' +
+      '<div class="advgrid">' + tile('s', 'Strength', a.strength) + tile('w', 'Watch', a.watch) + tile('t', 'Try', a.habit) + '</div>' +
+      (links ? '<p class="advlinks"><span class="lbl">Learn more</span>' + links + '</p>' : '') + '</section>';
+  }
+  var reported = P.filter(function (p) { return p.report; });
+  var total = P.reduce(function (s, p) { return s + (p.tokens || 0); }, 0);
+
+  // A request, a recorded change and a verified outcome are different claims. Older reports have no status, so only the clearest wording is read as a request.
+  var STATUS = { requested: 'Requested', recorded: 'Recorded', verified: 'Verified' };
+  var NO_RESULT = /\b(?:no|not|without)\b[^.]*\b(?:recorded|result|fix|completion|confirmation)\b/i;
+  function statusOf(e) {
+    if (STATUS[e.status]) return { key: e.status, inferred: false };
+    if (NO_RESULT.test((e.detail || '') + ' ' + (e.basis || ''))) return { key: 'requested', inferred: true };
+    return null;
+  }
+  var tally = { requested: 0, recorded: 0, verified: 0 }, examples = 0, classified = 0, saved = 0, counted = 0;
+  reported.forEach(function (p) {
+    arr(p.report.examples).forEach(function (e) {
+      examples++;
+      var s = statusOf(e);
+      if (s) { tally[s.key]++; classified++; }
+      if (e.a != null && e.b != null && !(s && s.key === 'requested')) { saved += Math.max(e.a - e.b, 0); counted++; }
+    });
+  });
+  var chips = function (t) {
+    return Object.keys(STATUS).filter(function (k) { return t[k]; }).map(function (k) { return '<span class="chip ' + k + '">' + t[k] + ' ' + STATUS[k].toLowerCase() + '</span>'; }).join('');
+  };
+
+  var days = arr(D.days);
+  var activeDays = days.filter(function (day) { return P.some(function (p) { return p.daily && p.daily[day] > 0; }); }).length;
+  var commits = P.reduce(function (s, p) { return s + (p.git ? p.git.count || 0 : 0); }, 0);
+  var parts = { input: 0, output: 0, cacheRead: 0, cacheCreate: 0 }, hasParts = false;
+  P.forEach(function (p) { if (p.tokenParts) { hasParts = true; Object.keys(parts).forEach(function (k) { parts[k] += p.tokenParts[k] || 0; }); } });
+  var partSum = parts.input + parts.output + parts.cacheRead + parts.cacheCreate;
+
+  var html = '<header><div><h1>AI report</h1><p class="sub">' + [D.user ? '<b>' + esc(D.user) + '</b>' : '', esc(D.label), D.dateRange ? '' : esc(D.range)].filter(Boolean).join(' · ') + '</p></div><label class="theme">Theme <select id="theme"><option value="system">System</option><option value="light">Light</option><option value="dark">Dark</option></select></label></header>';
+
+  var hasOverview = D.overview || D.overviewStale || arr(D.failures).length;
+  var review = D.promptingReview;
+  var gitRows = P.filter(function (p) { return p.git; });
+  var sections = [];
+  if (hasOverview) sections.push(['overview', 'Overview']);
+  sections.push(['usage', 'Usage']);
+  if (P.length) sections.push(['projects', 'Projects']);
+  var advice = D.overview && D.overview.advice && D.overview.advice.strength && D.overview.advice.watch && D.overview.advice.habit ? D.overview.advice : null;
+  if (advice) sections.push(['advice', 'Advice']);
+  if (review) sections.push(['prompting', 'Prompting']);
+  sections.push(['evidence', 'Evidence']);
+  html += '<nav class="sections" aria-label="Report sections">' + sections.map(function (s) { return '<a href="#' + s[0] + '">' + s[1] + '</a>'; }).join('') + '</nav>';
+
+  html += '<div class="kpis">' +
+    '<div class="card kpi"><b>' + human(total) + '</b><span>tokens' + (hasParts && partSum ? ' · ' + Math.round(parts.cacheRead / partSum * 100) + '% cache reads' : '') + '</span></div>' +
+    '<div class="card kpi"><b>' + activeDays + '</b><span>of ' + plural(days.length, 'day') + ' with activity</span></div>' +
+    '<div class="card kpi"><b>' + P.length + '</b><span>' + (P.length === 1 ? 'project' : 'projects') + (reported.length !== P.length ? ' · ' + reported.length + ' with reports' : '') + '</span></div>' +
+    (commits ? '<div class="card kpi"><b>' + commits + '</b><span>recorded ' + (commits === 1 ? 'commit' : 'commits') + '</span></div>' : '') + '</div>';
+
+  // Overview
+  if (hasOverview) {
+    var o = D.overview;
+    html += '<section class="block" id="overview"><div class="title"><h2>Overview</h2></div><div class="card">';
+    if (o) {
+      html += '<dl style="margin:0">' + [['Summary', o.summary], ['Goal', o.goal], ['Achievement', o.achievement]].map(function (row) {
+        var extra = row[0] === 'Achievement' && classified ? '<p class="outcome">Across ' + plural(examples, 'example') + ': ' + tally.verified + ' verified · ' + tally.recorded + ' recorded · ' + tally.requested + ' requested only</p>' : '';
+        return '<div class="ov-row"><dt>' + row[0] + '</dt><dd>' + esc(row[1] || '') + extra + '</dd></div>';
+      }).join('') + '</dl>';
+    }
+    if (D.overviewStale) html += '<div class="notice">Overview needs review after project changes.</div>';
+    if (arr(D.failures).length) html += '<div class="notice"><b>Partial report</b><ul>' + D.failures.map(function (f) { return '<li>' + esc(f.project) + ' · ' + esc(f.error) + '</li>'; }).join('') + '</ul></div>';
+    html += '</div></section>';
+  }
+
+  // Usage
+  var picker = P.length > 1 ? '<select id="chart-project" aria-label="Project for the token chart" aria-controls="chart"><option value="">All projects</option>' +
+    P.map(function (p, i) { return '<option value="' + i + '">' + esc(p.name) + '</option>'; }).join('') + '</select>' : '';
+  html += '<section class="block" id="usage"><div class="title"><h2>Usage</h2></div><div class="card chartcard"><div class="chartbar"><span class="muted">Tokens by day</span>' + picker + '</div>' +
+    '<svg id="chart" role="img" aria-label="Tokens per day"></svg><div class="tip" id="tip" hidden></div><div class="legend" id="legend"></div>' +
+    (hasParts && partSum ? '<p class="split">Input ' + human(parts.input) + ' · Output ' + human(parts.output) + ' · Cache read ' + human(parts.cacheRead) + ' · Cache write ' + human(parts.cacheCreate) + '</p>' : '') +
+    '<details class="tbl"><summary class="link">View chart data as a table</summary><div class="scroll" id="chart-table"></div></details></div></section>';
+
+  // Projects
+  function statusChip(e) {
+    var s = statusOf(e);
+    return s ? '<span class="chip ' + s.key + '"' + (s.inferred ? ' title="Inferred from the wording of an older report"' : '') + '>' + STATUS[s.key] + (s.inferred ? ' (inferred)' : s.key === 'verified' ? ' ✓' : '') + '</span>' : '';
+  }
+  var li = function (a) { return arr(a).map(function (x) { return '<li>' + esc(x) + '</li>'; }).join(''); };
+  function example(e, mx) {
+    var s = statusOf(e), hide = s && s.key === 'requested';
+    var wa = e.a != null ? e.a / mx * 100 : 0, wb = e.b != null ? e.b / mx * 100 : 0;
+    var reportedTime = e.timeSource === 'reported';
+    var tag = e.timeSource === 'estimated' ? ' (AI estimate)' : ' (estimate)';
+    var time = '';
+    if (!hide && (e.a != null || e.b != null)) {
+      time = '<div class="time">' + (e.a != null ? '<div class="tr"><span class="tb"><i class="w" style="width:' + wa.toFixed(0) + '%"></i></span><span>Without AI · ' + esc(e.withoutAI) + (reportedTime ? '' : tag) + '</span></div>' : '') +
+        (e.b != null ? '<div class="tr"><span class="tb"><i class="a" style="width:' + wb.toFixed(0) + '%"></i></span><span>' + (reportedTime ? 'Time spent · ' : 'With AI · ') + esc(e.withAI) + (reportedTime ? ' (self-reported)' : tag) + '</span></div>' : '') +
+        (e.a != null && e.b != null ? '<span><b>saves ' + hrs(Math.max(e.a - e.b, 0)) + '</b></span>' : '') + '</div>';
+    }
+    return '<article class="ex"><h5>' + esc(e.task) + statusChip(e) + '</h5>' + (e.detail ? '<p>' + esc(e.detail) + '</p>' : '') +
+      (e.basis ? '<p class="evid"><span class="lbl">Evidence</span>' + esc(e.basis) + '</p>' : '') + time + '</article>';
+  }
+  function projectRow(p, open) {
+    var r = p.report, meta = human(p.tokens) + ' tokens · ' + plural(p.prompts || 0, 'prompt') + (p.git && p.git.count ? ' · ' + plural(p.git.count, 'commit') : '');
+    var width = P.length && P[0].tokens ? Math.max(2, Math.round((p.tokens || 0) / P[0].tokens * 100)) : 0;
+    if (!r) return '<div class="card plain" ' + pc(p) + '><span class="pname"><span class="pico" data-pico="' + esc(projectKey(p)) + '">' + iconSvg(iconName(p)) + '</span>' + esc(p.name) + '</span><span class="muted">' + esc(meta) + ' · no report written</span></div>';
+    var rows = arr(r.examples), t = { requested: 0, recorded: 0, verified: 0 };
+    rows.forEach(function (e) { var s = statusOf(e); if (s) t[s.key]++; });
+    var mx = Math.max.apply(null, rows.flatMap(function (e) { return [e.a || 0, e.b || 0]; }).concat([0.01]));
+    var notes = arr(r.didntWork).length + arr(r.nextMonth).length;
+    return '<details class="card proj" id="' + slug(projectKey(p)) + '" ' + pc(p) + (open ? ' open' : '') + '><summary><span class="pico" data-pico="' + esc(projectKey(p)) + '">' + iconSvg(iconName(p)) + '</span><span class="ptxt"><span class="pname">' + esc(p.name) +
+      (r.source === 'local' ? '<span class="tag">local draft</span>' : '') + '</span><span class="pone">' + esc(r.summary) + '</span></span><span class="pmeta">' + esc(human(p.tokens) + ' tokens · ' + plural(p.prompts || 0, 'prompt')) + '</span><span class="pbar"><i style="width:' + width + '%"></i></span>' +
+      (chips(t) ? '<span class="pchips">' + chips(t) + '</span>' : '') + '</summary><div class="pbody"><p class="meta">' + esc(plural(rows.length, 'example') + ' · ' + plural(notes, 'note') + (p.git && p.git.count ? ' · ' + plural(p.git.count, 'commit') : '')) + '</p>' +
+      (arr(r.usedFor).length ? '<h4>How AI was used</h4><ul>' + li(r.usedFor) + '</ul>' : '') + (rows.length ? '<h4>Examples</h4>' + rows.map(function (e) { return example(e, mx); }).join('') : '') +
+      '<div class="cols"><div><h4>Didn’t work</h4>' + (arr(r.didntWork).length ? '<ul>' + li(r.didntWork) + '</ul>' : '<p class="muted">Nothing flagged.</p>') + '</div>' +
+      '<div><h4>Next</h4>' + (arr(r.nextMonth).length ? '<ul>' + li(r.nextMonth) + '</ul>' : '<p class="muted">Nothing planned.</p>') + '</div></div></div></details>';
+  }
+  if (P.length) {
+    var single = P.length === 1;
+    var rowHtml = P.map(function (p, i) { return projectRow(p, single && i === 0); });
+    html += '<section class="block" id="projects"><div class="title"><h2>Projects</h2>' + (reported.length > 1 ? '<button type="button" class="expand" id="tgl" aria-expanded="false">Expand all</button>' : '') + '</div>' +
+      '<p class="key">' + (classified ? 'Requested: asked for, no result recorded. Recorded: a change was recorded. Verified: a check or confirmation was recorded.' : 'Outcome status was not recorded for this report.') +
+      (counted ? ' Estimated time saved: about ' + hrs(saved) + ' across ' + plural(counted, 'example') + (classified ? ', excluding requests with no result.' : '.') : '') + '</p><div class="rows">' +
+      rowHtml.slice(0, LIMIT).join('') + '</div>' +
+      (rowHtml.length > LIMIT ? '<details class="rest"><summary class="link card">Show ' + (rowHtml.length - LIMIT) + ' more projects</summary><div class="rows">' + rowHtml.slice(LIMIT).join('') + '</div></details>' : '') + '</section>';
+  }
+
+  // Advice
+  if (advice) html += adviceSection(advice);
+
+  // Prompting review
+  if (review) {
+    var withReview = P.filter(function (p) { return p.promptReview; });
+    var problems = arr(D.reviewFailures).map(function (f) { return '<li>' + esc(f.project) + ' · ' + esc(f.error) + '</li>'; }).join('');
+    var reviewHtml = function (p, open) {
+      var rv = p.promptReview, refs = {};
+      arr(rv.references).forEach(function (ref) { refs[ref.id] = ref; });
+      var refLine = function (id) {
+        var ref = refs[id];
+        return ref ? '<span class="ref">' + esc(id) + ' · ' + (ref.source === 'codex' ? 'Codex' : 'Claude Code') + ' · ' + esc(utc(ref.at)) + '</span>' : '';
+      };
+      // Findings carry the checked excerpt of the user's own words. Older reviews only have the observation text.
+      var notes = function (label, items, plain) {
+        if (arr(items).length) return '<h4>' + label + '</h4><ul>' + items.map(function (item) { return '<li><q>' + esc(item.quote) + '</q> ' + esc(item.text) + refLine(item.id) + '</li>'; }).join('') + '</ul>';
+        return arr(plain).length ? '<h4>' + label + '</h4><ul>' + plain.map(function (text) { var m = /^(P\d+):\s*/.exec(text); return '<li>' + esc(m ? text.slice(m[0].length) : text) + (m ? refLine(m[1]) : '') + '</li>'; }).join('') + '</ul>' : '';
+      };
+      var coverage = rv.prompts + ' prompts · ' + plural(rv.sessions, 'session') + ' · ' + rv.split + (rv.fragments ? ' · ' + rv.fragments + ' message fragments' : '') + (rv.files ? ' · ' + rv.files + ' changed files considered' : '') +
+        (rv.authorUnknown ? ' · commit attribution unavailable without a Git author email' : '') + (rv.missingGit ? ' · some Git evidence could not be read' : '') + (rv.reused ? ' · reused from saved evidence' : '');
+      var changed = arr(rv.changedFiles).map(function (c) { return '<li><code>' + esc(c.file) + '</code>' + (arr(c.ranges).length ? ' <span class="muted">' + esc(c.ranges.join(' · ')) + '</span>' : '') + '</li>'; }).join('');
+      return '<details class="card rev"' + (open ? ' open' : '') + '><summary>' + esc(p.name) + '<span>' + plural(arr(rv.strengthItems).length || arr(rv.strengths).length, 'strength') + ' · ' + plural(arr(rv.opportunityItems).length || arr(rv.opportunities).length, 'practice item') + '</span></summary><div class="rbody">' +
+        '<p>' + esc(rv.summary) + '</p><p class="meta">' + esc(coverage) + '</p>' + notes('Strengths', rv.strengthItems, rv.strengths) + notes('Practice next', rv.opportunityItems, rv.opportunities) +
+        (rv.rewrite ? '<h4>Suggested rewrite</h4><p>' + esc(rv.rewrite) + '</p><p class="meta">Written by the model as an illustration. It is not one of your prompts.</p>' : '') +
+        (rv.contextNote || rv.mediumNote || rv.highNote ? '<h4>Project context</h4><p>' + esc(rv.contextNote || rv.mediumNote || rv.highNote) + '</p><p class="meta">Model note from the project documents. It is secondary to your own wording.</p>' : '') +
+        (arr(rv.contextFiles).length ? '<h4>Context files</h4><ul>' + li(rv.contextFiles) + '</ul>' : '') +
+        (changed ? '<h4>Changed files and line ranges</h4><ul>' + changed + '</ul>' : '') + '</div></details>';
+    };
+    html += '<section class="block" id="prompting"><div class="title"><h2>Prompting</h2></div><div class="card synth">' +
+      (review.summary ? '<p>' + esc(review.summary) + '</p>' : '<p class="muted">No cross-project synthesis was written.</p>') +
+      '<p class="meta">' + esc([review.effort, review.scope].filter(Boolean).join(' · ')) + '</p>' +
+      (problems ? '<p>Some projects need another review pass.</p><ul>' + problems + '</ul>' : '') + '</div><div class="rows" style="margin-top:8px">' +
+      withReview.slice(0, LIMIT).map(function (p, i) { return reviewHtml(p, withReview.length === 1 && i === 0); }).join('') + '</div>' +
+      (withReview.length > LIMIT ? '<details class="rest"><summary class="link card">Show ' + (withReview.length - LIMIT) + ' more project reviews</summary><div class="rows">' + withReview.slice(LIMIT).map(function (p) { return reviewHtml(p, false); }).join('') + '</div></details>' : '') + '</section>';
+  }
+
+  // Evidence
+  var CAP = 20;
+  var stamp = function (c) { return '<li><time datetime="' + esc(c.at) + '">' + esc(utc(c.at)) + '</time> <code>' + esc(String(c.hash).slice(0, 10)) + '</code> ' + esc(c.subject) + '</li>'; };
+  var gitHtml = gitRows.map(function (p) {
+    var g = p.git, repos = arr(g.repositories);
+    var label = !repos.length ? 'No Git repository found' : g.count ? plural(g.count, 'commit') : 'No dated commits found';
+    return '<details class="card git"><summary>' + esc(p.name) + '<span>' + esc(label) + (g.first ? ' · ' + esc(utc(g.first)) + (g.last !== g.first ? ' to ' + esc(utc(g.last)) : '') : '') + '</span></summary><div class="gbody">' +
+      repos.map(function (repo) {
+        if (repo.unavailable) return '<p>' + esc(repo.name) + ' · Git history unavailable</p>';
+        var list = arr(repo.commits);
+        return '<p><b>' + esc(repo.name) + '</b>' + (repo.authorUnknown ? ' <span class="muted">· author email not set, so every commit is listed</span>' : '') + '</p>' +
+          (list.length ? '<ul>' + list.slice(0, CAP).map(stamp).join('') + '</ul>' + (list.length > CAP ? '<details><summary class="link">Show ' + (list.length - CAP) + ' more commits</summary><ul>' + list.slice(CAP).map(stamp).join('') + '</ul></details>' : '') : '<p class="muted">No dated commits in this period.</p>');
+      }).join('') + '</div></details>';
+  });
+  html += '<section class="block" id="evidence"><div class="title"><h2>Evidence</h2></div><div class="rows">' + gitHtml.slice(0, LIMIT).join('') + '</div>' +
+    (gitHtml.length > LIMIT ? '<details class="rest"><summary class="link card">Show ' + (gitHtml.length - LIMIT) + ' more repositories</summary><div class="rows">' + gitHtml.slice(LIMIT).join('') + '</div></details>' : '') + '<div class="card method" style="margin-top:8px"><b>How these numbers are counted</b><ul>' +
+    '<li>Tokens add input, output, cache reads and cache writes from Claude Code and Codex logs, so cache reads can dominate the total.</li>' +
+    '<li>Prompts are your own messages. Sessions started by an agent for a subtask are not counted as prompts.</li>' +
+    '<li>A commit is a recorded change in a repository. It shows when the change was recorded, not that a prompt produced it.</li>' +
+    '<li>Time saved is an estimate and appears only for examples with a recorded result. All times are UTC.</li></ul></div></section>';
+  html += '<p class="foot">Generated by Claude Report</p>';
+
+  app.innerHTML = html;
+
+  // Theme
+  var theme = document.getElementById('theme');
+  var selected = 'system';
+  try { selected = localStorage.getItem('claude-report-theme') || 'system'; } catch (e) { /* storage can be blocked */ }
+  if (selected !== 'light' && selected !== 'dark') selected = 'system';
+  function showTheme(value) {
+    if (value === 'system') document.documentElement.removeAttribute('data-theme');
+    else document.documentElement.setAttribute('data-theme', value);
+  }
+  if (theme) {
+    theme.value = selected;
+    showTheme(selected);
+    theme.addEventListener('change', function () {
+      showTheme(theme.value);
+      try { localStorage.setItem('claude-report-theme', theme.value); } catch (e) { /* storage can be blocked */ }
+    });
+  }
+
+  // Disclosure controls
+  var all = function (sel) { return app.querySelectorAll ? Array.prototype.slice.call(app.querySelectorAll(sel)) : []; };
+  var tgl = document.getElementById('tgl');
+  if (tgl) tgl.addEventListener('click', function () {
+    var open = tgl.getAttribute('aria-expanded') !== 'true';
+    all('details.rest').forEach(function (d) { if (open) d.open = true; });
+    all('details.proj').forEach(function (d) { d.open = open; });
+    tgl.setAttribute('aria-expanded', String(open));
+    tgl.textContent = open ? 'Collapse all' : 'Expand all';
+  });
+  function reveal(el) {
+    for (var n = el; n && n !== app; n = n.parentNode) if (n.tagName === 'DETAILS') n.open = true;
+  }
+  function onHash() {
+    var t = location.hash.length > 1 ? document.getElementById(decodeURIComponent(location.hash.slice(1))) : null;
+    if (t) { reveal(t); if (t.scrollIntoView && t.tagName === 'DETAILS') t.scrollIntoView(); }
+  }
+  window.addEventListener('hashchange', onHash);
+  var openAll = function () { all('details').forEach(function (d) { d.open = true; }); };
+  window.addEventListener('beforeprint', openAll);
+  // The PDF export loads this page with #print so every section is open on paper.
+  if (location.hash === '#print') openAll(); else onHash();
+
+  // Stacked daily bars. Eight projects keep a colour, the rest are one "Other" series.
+  var chartProject = document.getElementById('chart-project');
+  var axisNumber = new Intl.NumberFormat('en', { notation: 'compact', maximumFractionDigits: 2 });
+  var pinned = '';
+  function seriesFor(chosen) {
+    if (chosen) return [{ k: 's' + P.indexOf(chosen), name: chosen.name, c: chosen._c, ds: [chosen] }];
+    var out = P.slice(0, TOP).map(function (p, i) { return { k: 's' + i, name: p.name, c: p._c, ds: [p] }; });
+    if (P.length > TOP) out.push({ k: 'other', name: 'Other (' + (P.length - TOP) + ' projects)', c: 'var(--other)', ds: P.slice(TOP) });
+    return out;
+  }
+  var valueOf = function (s, day) { return s.ds.reduce(function (sum, p) { return sum + ((p.daily && p.daily[day]) || 0); }, 0); };
+  function draw() {
+    var svg = document.getElementById('chart');
+    if (!svg) return;
+    var W = svg.clientWidth || 600, H = 150, L = 40, B = 18, T = 6, R = 2;
+    var n = days.length, pw = W - L - R, ph = H - T - B;
+    var chosen = chartProject && chartProject.value !== '' ? P[Number(chartProject.value)] : null;
+    var series = seriesFor(chosen), order = series.slice().reverse();
+    var stacks = days.map(function (key) {
+      var sum = 0, segments = [];
+      order.forEach(function (s) {
+        var value = valueOf(s, key);
+        if (value <= 0) return;
+        segments.push({ s: s, from: sum, to: sum + value });
+        sum += value;
+      });
+      return { total: sum, segments: segments };
+    });
+    var peak = stacks.reduce(function (max, stack) { return Math.max(max, stack.total); }, 0);
+    var label = chosen ? 'Tokens per day for ' + chosen.name : 'Tokens per day, stacked by project';
+    svg.setAttribute('aria-label', peak ? label + '. Busiest day ' + human(peak) + ' tokens. A data table follows.' : label + ', no activity');
+    svg.setAttribute('viewBox', '0 0 ' + W + ' ' + H);
+    svg.setAttribute('height', H);
+    var legend = document.getElementById('legend');
+    if (legend) legend.innerHTML = series.map(function (s) {
+      return '<button type="button" class="lg" data-n="' + s.k + '" aria-pressed="' + (pinned === s.k) + '"><i class="dot" style="--pc:' + s.c + '"></i>' + esc(s.name) + '</button>';
+    }).join('');
+    var tableBox = document.getElementById('chart-table');
+    if (tableBox) tableBox.innerHTML = peak ? '<table><thead><tr><th scope="col">Day</th><th scope="col">Total</th>' + series.map(function (s) { return '<th scope="col">' + esc(s.name) + '</th>'; }).join('') + '</tr></thead><tbody>' +
+      days.map(function (key, i) {
+        return stacks[i].total ? '<tr><th scope="row">' + shortDay(key) + '</th><td>' + human(stacks[i].total) + '</td>' + series.map(function (s) { return '<td>' + (valueOf(s, key) ? human(valueOf(s, key)) : '–') + '</td>'; }).join('') + '</tr>' : '';
+      }).join('') + '</tbody></table>' : '<p class="muted">No token activity.</p>';
+    if (!peak) {
+      svg.innerHTML = '<text x="' + W / 2 + '" y="' + H / 2 + '" text-anchor="middle">No token activity</text>';
+      return;
+    }
+    var step = pw / n, bw = Math.min(step, Math.max(step * 0.66, 0.75));
+    // Nearby round intervals keep a moderately larger day from pushing the axis to the next big milestone.
+    var target = Math.max(1, peak / 3);
+    var magnitude = Math.pow(10, Math.floor(Math.log10(target)));
+    var interval = Math.floor([5, 2.5, 2, 1].find(function (factor) { return factor * magnitude <= target; }) * magnitude);
+    var tickCount = Math.ceil(peak / interval), top = tickCount * interval;
+    var y = function (v) { return T + ph - v / top * ph; };
+    var at = function (s, key, v) { return ' data-n="' + s.k + '" data-title="' + esc(s.name) + '" data-d="' + key + '" data-v="' + v + '" data-c="' + s.c + '"'; };
+    var out = '';
+    for (var tick = 0; tick <= tickCount; tick++) {
+      var value = tick * interval, lineY = y(value);
+      out += '<line x1="' + L + '" x2="' + (W - R) + '" y1="' + lineY + '" y2="' + lineY + '" stroke="var(--line)" stroke-width=".7"/><text x="' + (L - 5) + '" y="' + (lineY + 3) + '" text-anchor="end">' + axisNumber.format(value) + '</text>';
+    }
+    var labelEvery = D.dateRange ? Math.ceil(n / Math.max(1, Math.floor(pw / 52))) : 5;
+    for (var i = 0; i < n; i++) {
+      var day = i + 1, key = days[i], x = L + i * step + (step - bw) / 2, segs = stacks[i].segments;
+      segs.forEach(function (seg, j) {
+        var y1 = y(seg.to), h = y(seg.from) - y1, r = Math.min(2.5, bw / 2, h);
+        out += j === segs.length - 1
+          ? '<path d="M' + x + ' ' + (y1 + h) + 'V' + (y1 + r) + 'Q' + x + ' ' + y1 + ' ' + (x + r) + ' ' + y1 + 'H' + (x + bw - r) + 'Q' + (x + bw) + ' ' + y1 + ' ' + (x + bw) + ' ' + (y1 + r) + 'V' + (y1 + h) + 'Z" fill="' + seg.s.c + '"' + at(seg.s, key, seg.to - seg.from) + '/>'
+          : '<rect x="' + x + '" y="' + y1 + '" width="' + bw + '" height="' + h + '" fill="' + seg.s.c + '"' + at(seg.s, key, seg.to - seg.from) + '/>';
+      });
+      if (day === 1 || (D.dateRange ? i : day) % labelEvery === 0) out += '<text x="' + (x + bw / 2) + '" y="' + (H - 4) + '" text-anchor="middle">' + (D.dateRange ? shortDay(key) : +key.slice(8)) + '</text>';
+    }
+    svg.innerHTML = out;
+    mark(pinned);
+  }
+
+  // Hover, focus or a click on a legend entry lights that series and dims the rest.
+  function mark(name) {
+    var svg = document.getElementById('chart'), legend = document.getElementById('legend');
+    if (!svg || !svg.classList) return;
+    svg.classList[name ? 'add' : 'remove']('hov');
+    Array.prototype.forEach.call(svg.querySelectorAll('[data-n]'), function (el) { el.classList[el.getAttribute('data-n') === name ? 'add' : 'remove']('on'); });
+    if (!legend) return;
+    legend.classList[name ? 'add' : 'remove']('hov');
+    Array.prototype.forEach.call(legend.children, function (el) { el.classList[el.getAttribute('data-n') === name ? 'add' : 'remove']('on'); });
+  }
+  function wire() {
+    var svg = document.getElementById('chart'), tip = document.getElementById('tip'), legend = document.getElementById('legend');
+    if (!svg || !svg.addEventListener) return;
+    var card = svg.parentNode;
+    svg.addEventListener('mousemove', function (e) {
+      var t = e.target.closest ? e.target.closest('[data-n]') : null;
+      if (!t) { mark(pinned); tip.hidden = true; return; }
+      mark(t.getAttribute('data-n'));
+      tip.innerHTML = '<i class="dot" style="--pc:' + t.getAttribute('data-c') + '"></i> ' + esc(t.getAttribute('data-title')) + ' · ' + shortDay(t.getAttribute('data-d')) + ' · ' + human(+t.getAttribute('data-v'));
+      tip.hidden = false;
+      var r = card.getBoundingClientRect();
+      tip.style.left = Math.max(4, Math.min(e.clientX - r.left + 10, r.width - tip.offsetWidth - 4)) + 'px';
+      tip.style.top = Math.max(2, e.clientY - r.top - 34) + 'px';
+    });
+    svg.addEventListener('mouseleave', function () { mark(pinned); tip.hidden = true; });
+    if (!legend || !legend.addEventListener) return;
+    var key = function (e) { var t = e.target.closest ? e.target.closest('[data-n]') : null; return t ? t.getAttribute('data-n') : ''; };
+    legend.addEventListener('mouseover', function (e) { mark(key(e) || pinned); });
+    legend.addEventListener('focusin', function (e) { mark(key(e) || pinned); });
+    legend.addEventListener('mouseleave', function () { mark(pinned); });
+    legend.addEventListener('focusout', function () { mark(pinned); });
+    legend.addEventListener('click', function (e) {
+      var k = key(e);
+      if (!k) return;
+      pinned = pinned === k ? '' : k;
+      Array.prototype.forEach.call(legend.children, function (el) { el.setAttribute('aria-pressed', String(el.getAttribute('data-n') === pinned)); });
+      mark(pinned);
+    });
+  }
+  draw();
+  wire();
+  if (chartProject) chartProject.addEventListener('change', function () { pinned = ''; draw(); });
+  window.addEventListener('resize', draw);
+})();
+</script>

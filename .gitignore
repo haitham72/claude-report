@@ -1,0 +1,17 @@
+node_modules/
+*.vsix
+/dist/
+.DS_Store
+
+# Your own usage data: transcripts-derived numbers, prompts and reports. Never commit these.
+out/
+
+# Built from your real data by design/build-preview.js
+design/panel-preview.html
+design/splash-preview.html
+design/demo-preview.html
+design/demo-report.html
+HANDOFF.md
+.playwright-mcp/
+debug.log
+/screenshots/

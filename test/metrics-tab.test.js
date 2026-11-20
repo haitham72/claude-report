@@ -1,0 +1,99 @@
+'use strict';
+const test = require('node:test');
+const assert = require('node:assert');
+const fs = require('fs');
+const path = require('path');
+
+const win = {};
+new Function('window', fs.readFileSync(path.join(__dirname, '..', 'template', 'panel', 'metrics.js'), 'utf8'))(win);
+const M = win.ClaudeReportMetrics;
+
+const days = [];
+for (let i = 1; i <= 30; i++) days.push('2026-11-' + String(i).padStart(2, '0'));
+function proj(name, k) {
+  const hours = new Array(24).fill(0); hours[10] = 5 * k;
+  return {
+    name, tokens: 1000 * k, sessions: 2, prompts: 9,
+    t: { input: 100 * k, output: 777 * k, cacheRead: 5000 * k, cacheCreate: 300 * k, turns: 40 * k },
+    daily: { '2026-11-02': 1234 * k }, dailyTurns: { '2026-11-02': 3 * k },
+    tools: { Bash: { calls: 50 * k, fails: 10 * k }, mcp__srv__search: { calls: 7 * k, fails: 0 } },
+    models: { 'claude-opus-x': 4000 * k }, hours,
+    cache: { cold: 2 * k, rebuilt: 900 * k, afterIdle: k, starts: 3 },
+  };
+}
+const hist = [];
+for (let i = 0; i < 10; i++) hist.push({ t: 1e12 + i * 600000, s: 10 + i, w: 20 + i / 2 });
+const D = { openProject: 'alpha', days, windowDays: 30, live: null, history: hist, now: hist.at(-1).t, projects: [proj('alpha', 1), proj('beta', 2)] };
+
+test('renders every section label and the footnote', () => {
+  const html = M.render(D, { openOnly: false });
+  ['Plan usage', 'Burn rate', 'Trend', '5-hour limit', 'Tokens', 'Only the open project', 'Cache efficiency', 'Tools',
+    'When you work', 'By model', 'By project', 'Counted locally from your transcripts'].forEach((s) =>
+    assert.ok(html.includes(s), s));
+  assert.ok(html.includes('busiest at 10h'));
+  assert.ok(html.includes('var(--c'));
+  assert.ok(html.includes('>search<') && !html.includes('mcp__'));
+});
+
+test('openOnly drops the other project', () => {
+  const all = M.render(D, { openOnly: false });
+  const one = M.render(D, { openOnly: true });
+  assert.ok(all.includes('>beta<'));
+  assert.ok(!one.includes('>beta<'));
+  assert.ok(one.includes('>alpha<'));
+  assert.ok(all.includes('>18.5k<') && !one.includes('>18.5k<'));
+  assert.ok(one.includes('>ON<'));
+  const none = M.render(Object.assign({}, D, { openProject: null }), { openOnly: true });
+  assert.ok(none.includes('>beta<') && none.includes('data-off') && none.includes('>OFF<'));
+  assert.match(one, /1 other project hidden/);
+});
+
+test('plan usage shows the current percentage and reset countdown without extrapolating from seconds of data', () => {
+  const hour = 3600000, now = 1e12, reset = (now + 2 * hour) / 1000;
+  const live = { fiveHour: { pct: 1, resetsAt: reset, seenAt: now } };
+  const short = [{ t: now - 5315, s: 0, sr: reset }];
+  const html = M.render({ now, live, history: short });
+  assert.match(html, />1%<.*>2h 0m</);
+  assert.match(html, /Needs 15 minutes of readings/);
+  assert.doesNotMatch(html, /%\/h|Full in/);
+  const enough = [{ t: now - hour / 2, s: 0, sSource: 'control' }, ...short];
+  const forecast = M.render({ now, live, history: enough });
+  assert.match(forecast, /\+2\.0%\/h/);
+  assert.match(forecast, /Resets before full/);
+  assert.match(forecast, /Includes Claude Control/);
+});
+
+test('project names are escaped', () => {
+  const html = M.render({ projects: [proj('<script>alert(1)</script>', 1)] }, {});
+  assert.ok(!html.includes('<script>'));
+  assert.ok(html.includes('&lt;script&gt;'));
+});
+
+test('does not throw on empty or sparse data', () => {
+  assert.strictEqual(typeof M.render({}, {}), 'string');
+  assert.strictEqual(typeof M.render(undefined, undefined), 'string');
+  assert.strictEqual(typeof M.render({ days, projects: [{ name: 'x' }, {}, null] }, { openOnly: true }), 'string');
+});
+
+test('plan trends use wall-clock ranges and break at provider resets', () => {
+  const hour = 3600000, now = 1e12;
+  const history = [
+    { t: now - 30 * hour, s: 99, w: 23 },
+    { t: now - 5 * hour, s: 61, sr: (now - 4 * hour) / 1000 },
+    { t: now - 3 * hour, s: 14, sr: (now + hour) / 1000 }
+  ];
+  const html = M.render({ now, history });
+  assert.match(html, /5-hour limit · last 24 hours/);
+  assert.match(html, /Weekly limit · last 7 days/);
+  assert.match(html, /class="spark-reset"/);
+  assert.match(html, /d="M197\.2 17\.3M217\.5 33\.2"/);
+  assert.match(html, />14%<.*>23%<.*7 days ago/);
+  assert.doesNotMatch(M.render({ now, history, showUsageTrend: false }), /Claude plan/);
+});
+
+test('bind reports the toggled value', () => {
+  let h; const root = { addEventListener: (_, f) => { h = f; } };
+  let got; M.bind(root, { openOnly: false }, (s) => { got = s; });
+  h({ target: { closest: () => ({ disabled: false }) } });
+  assert.deepStrictEqual(got, { openOnly: true });
+});

@@ -1,0 +1,94 @@
+<title>Claude Report Next Phase</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<style>
+/* Layout: the same iOS grouped look as the report. A flow diagram first, then two wireframes of the admin views, then the import contract. Everything here is planned, nothing is built. */
+:root{--bg:#f2f2f7;--card:#ffffff;--fg:#000000;--sec:#6c6c70;--ter:#aeaeb2;--line:#e5e5ea;--fill:#f2f2f7;--blue:#007aff;--ok:#34c759;--warn:#ff9500;--bad:#ff3b30;--c0:#007aff;--c1:#34c759;--c2:#ff9500;--c4:#af52de;--c5:#30b0c7;--c6:#5856d6;
+--font:-apple-system,BlinkMacSystemFont,"SF Pro Text","Segoe UI",Roboto,"Helvetica Neue",Arial,sans-serif;--mono:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){--bg:#000;--card:#1c1c1e;--fg:#fff;--sec:#98989f;--ter:#636366;--line:#38383a;--fill:#2c2c2e;--blue:#0a84ff;--ok:#30d158;--warn:#ff9f0a;--bad:#ff453a;--c0:#0a84ff;--c1:#30d158;--c2:#ff9f0a;--c4:#bf5af2;--c5:#40c8e0;--c6:#5e5ce6;color-scheme:dark}}
+:root[data-theme="dark"]{--bg:#000;--card:#1c1c1e;--fg:#fff;--sec:#98989f;--ter:#636366;--line:#38383a;--fill:#2c2c2e;--blue:#0a84ff;--ok:#30d158;--warn:#ff9f0a;--bad:#ff453a;--c0:#0a84ff;--c1:#30d158;--c2:#ff9f0a;--c4:#bf5af2;--c5:#40c8e0;--c6:#5e5ce6;color-scheme:dark}
+body{background:var(--bg);color:var(--fg);font-family:var(--font);font-size:15px;line-height:1.4;-webkit-font-smoothing:antialiased}
+.wrap{max-width:880px;margin:0 auto;padding-inline:max(16px,env(safe-area-inset-left,0px)) max(16px,env(safe-area-inset-right,0px));padding-block:28px 40px;display:grid;gap:16px}
+.cap{font-size:13px;font-weight:600;letter-spacing:.02em;color:var(--sec);text-transform:uppercase}
+h1{font-size:28px;line-height:1.1;font-weight:700;letter-spacing:-.02em;margin:2px 0 4px}
+h2{font-size:13px;font-weight:600;letter-spacing:.02em;text-transform:uppercase;color:var(--sec);margin:0 0 12px}
+.sub{color:var(--sec);margin:0}
+.pill{display:inline-block;background:color-mix(in srgb,var(--warn) 18%,transparent);color:var(--fg);border-radius:99px;padding:2px 10px;font-size:12px;font-weight:600;margin-left:8px;vertical-align:middle}
+.card{background:var(--card);border-radius:18px;padding:16px 18px;min-width:0}
+.pre.mermaid,pre.mermaid{margin:0;text-align:center}
+.two{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:16px}
+@media (max-width:700px){.two{grid-template-columns:1fr}}
+.shot{background:var(--bg);border:1px solid var(--line);border-radius:14px;padding:12px;display:grid;gap:8px;min-width:0}
+.shot h3{font-size:12px;font-weight:600;color:var(--sec);margin:0 0 2px;text-transform:uppercase;letter-spacing:.02em}
+.person{display:grid;grid-template-columns:1fr auto;gap:2px 10px;background:var(--card);border-radius:12px;padding:10px 12px}
+.person b{font-weight:600}
+.person small{color:var(--sec);font-size:12px}
+.chip{justify-self:end;font-size:11px;font-weight:600;border-radius:99px;padding:1px 8px;color:var(--fg)}
+.ok{background:color-mix(in srgb,var(--ok) 22%,transparent)}
+.late{background:color-mix(in srgb,var(--bad) 20%,transparent)}
+.dots{display:flex;gap:4px;margin-top:4px}
+.dots i{width:8px;height:8px;border-radius:50%}
+.sum{background:var(--card);border-radius:12px;padding:10px 12px;font-size:13px}
+.sum small{display:block;color:var(--ter);font-size:11px;margin-bottom:2px}
+.cards3{display:grid;grid-template-columns:repeat(3,1fr);gap:6px}
+.mini{background:var(--card);border-radius:10px;padding:8px;font-size:11.5px;color:var(--sec)}
+.mini b{display:block;color:var(--fg);font-size:11px;text-transform:uppercase;letter-spacing:.02em;margin-bottom:2px}
+.pc{background:var(--card);border-radius:12px;overflow:hidden;font-size:13px}
+.pc>div:first-child{padding:8px 12px;font-weight:600;display:flex;justify-content:space-between}
+.pc>div:last-child{padding:8px 12px;color:var(--sec)}
+.note{color:var(--sec);font-size:13px;margin:10px 0 0}
+pre.code{margin:0;overflow-x:auto;background:var(--fill);border-radius:12px;padding:12px 14px;font-family:var(--mono);font-size:12px;line-height:1.5}
+ul.list{margin:0;padding-left:18px;display:grid;gap:6px;font-size:14px}
+</style>
+<div class="wrap">
+<header><div class="cap">Claude Report</div><h1>Next phase<span class="pill">Not built yet</span></h1>
+<p class="sub">Team dashboard on a company domain. Reports arrive as structured data, so no model is needed to import them.</p></header>
+
+<section class="card"><h2>How a report travels</h2>
+<pre class="mermaid">flowchart LR
+  A["Extension on each laptop<br/>creates report.json"] -->|"MCP tool: submit_report<br/>no prompts, only report fields"| B["Report server<br/>company network domain"]
+  B --> C[("Report store")]
+  C --> D["Admin dashboard<br/>team quick check"]
+  C --> E["Single user report<br/>minimal, expandable"]
+  F["Admin Claude hook<br/>adds a short summary on top"] --> D
+  C --> F</pre>
+<p class="note">The server only stores and shows what the extension already produced. The only model call in this phase is the admin hook that writes a two-line summary above the data.</p></section>
+
+<div class="two">
+<section class="card"><h2>1. Team quick check</h2>
+<div class="shot"><h3>Admin · November 2026</h3>
+<div class="sum"><small>Admin summary (hook, optional)</small>6 of 8 submitted. Most effort went to research and onboarding work. Two people have no report yet.</div>
+<div class="person"><b>alex.m</b><span class="chip ok">submitted</span><small>589M tokens · about 69 h saved</small><span class="dots"><i style="background:var(--c0)"></i><i style="background:var(--c1)"></i><i style="background:var(--c2)"></i></span></div>
+<div class="person"><b>a.khan</b><span class="chip ok">submitted</span><small>210M tokens · about 31 h saved</small><span class="dots"><i style="background:var(--c4)"></i><i style="background:var(--c5)"></i></span></div>
+<div class="person"><b>s.noor</b><span class="chip late">missing</span><small>Due 1 Dec</small><span></span></div></div>
+<p class="note">One row per person. Colour dots are that person's projects, using the same colours as their own report.</p></section>
+
+<section class="card"><h2>2. Single user report</h2>
+<div class="shot"><h3>alex.m · November 2026</h3>
+<div class="cards3"><div class="mini"><b>Summary</b>Research and onboarding work…</div><div class="mini"><b>Goal</b>Memory app data paths…</div><div class="mini"><b>Achievement</b>About 69 h saved…</div></div>
+<div class="pc"><div style="background:color-mix(in srgb,var(--c0) 20%,var(--card))"><span>web-storefront</span><span>201.6M</span></div><div>Memory extraction design… · Show</div></div>
+<div class="pc"><div style="background:color-mix(in srgb,var(--c1) 20%,var(--card))"><span>payments-api</span><span>186.9M</span></div><div>Launch film and sound… · Show</div></div></div>
+<p class="note">The same page the person sent, rendered from the same JSON. Cards expand in place.</p></section>
+</div>
+
+<section class="card"><h2>Import contract</h2>
+<pre class="code">{
+  "schemaVersion": 1,
+  "user": "alex.m",
+  "month": "2026-11",
+  "overview": { "summary": "", "goal": "", "achievement": "" },
+  "projects": [{
+    "name": "web-storefront", "tokens": 201600000, "sessions": 28, "prompts": 69,
+    "report": { "summary": "", "examples": [{ "task": "", "withoutAI": "~6 h", "withAI": "~1.5 h" }],
+                "didntWork": [], "nextMonth": [] }
+  }]
+}</pre>
+<p class="note">This is what the extension already saves as report.json. The server validates the version and the shape, then stores it as is.</p></section>
+
+<section class="card"><h2>Decisions before building</h2>
+<ul class="list">
+<li><b>Who may submit:</b> sign-in on the company domain, one report per person per month, resubmitting replaces it. The server takes the name from the sign-in and ignores the "user" field in the file.</li>
+<li><b>What leaves the laptop:</b> report fields and token counts only. Prompts stay local. The user sees the exact file before sending.</li>
+<li><b>Admin hook:</b> runs on the admin's Claude Code, reads stored reports, and writes the short summary shown on top. The data itself is never rewritten.</li>
+<li><b>Policy:</b> the report is mandatory and due on the 1st. The dashboard marks who is missing, so a lead does not have to chase by hand.</li>
+</ul></section>
+</div>

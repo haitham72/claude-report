@@ -1,0 +1,593 @@
+<style>
+/* Claude Report sidebar. Layout, spacing and type follow Claude Control (MIT, Lucas do Nordeste): a dense HUD that takes its background and text from the VS Code theme, mono labels, thin rules. Only the colours are Claude Report's: a blue accent, and one colour per project. */
+:root {
+  --accent: #4f8cff;
+  --accent-dim: #4f8cff33;
+  --accent-soft: #4f8cff18;
+  --accent-line: #4f8cff;
+  --led-on: #34c759;
+  --led-off: #5a5a5a;
+  --warn: #ff9f0a;
+  --warn-text: #ff9f0a;
+  --danger: #ff453a;
+  --danger-text: #ff453a;
+  --info: #5e5ce6;
+  --hair: color-mix(in srgb, var(--vscode-foreground) 14%, transparent);
+  --hair-soft: color-mix(in srgb, var(--vscode-foreground) 8%, transparent);
+  --row-hover: color-mix(in srgb, var(--vscode-foreground) 7%, transparent);
+  --panel: color-mix(in srgb, var(--vscode-foreground) 4%, transparent);
+  --mute: color-mix(in srgb, var(--vscode-foreground) 55%, transparent);
+  --mute2: color-mix(in srgb, var(--vscode-foreground) 38%, transparent);
+  --mono: ui-monospace, "SF Mono", SFMono-Regular, "JetBrains Mono", Menlo, Consolas, monospace;
+  --c0: #0a84ff; --c1: #30d158; --c2: #ff9f0a; --c3: #ff375f; --c4: #bf5af2; --c5: #40c8e0;
+  --c6: #5e5ce6; --c7: #ffd60a; --c8: #ff453a; --c9: #63e6e2; --c10: #ac8e68; --c11: #64d2ff;
+}
+body.vscode-light, body.vscode-high-contrast-light {
+  --accent: #2563d6; --accent-dim: #2563d633; --accent-soft: #2563d618;
+  --warn-text: #8a6200; --danger-text: #b3312b;
+  --c0: #007aff; --c1: #34c759; --c2: #ff9500; --c3: #ff2d55; --c4: #af52de; --c5: #30b0c7;
+  --c6: #5856d6; --c7: #e0a800; --c8: #ff3b30; --c9: #00a89f; --c10: #a2845e; --c11: #32ade6;
+}
+* { box-sizing: border-box; }
+html, body { margin: 0; padding: 0; font-family: var(--vscode-font-family); font-size: 13px; color: var(--vscode-foreground); background: transparent; overflow-x: hidden; }
+#app { display: flex; flex-direction: column; min-height: 100vh; }
+.boot { padding: 18px; color: var(--mute); font-family: var(--mono); font-size: 11px; }
+:focus-visible { outline: 1px solid var(--accent); outline-offset: 1px; border-radius: 4px; }
+@keyframes pulse { 50% { opacity: .35; } }
+@keyframes spin { to { transform: rotate(360deg); } }
+
+.top { position: sticky; top: 0; z-index: 5; background: var(--vscode-sideBar-background, var(--vscode-editor-background)); border-bottom: 1px solid var(--hair); }
+.hdr { display: flex; align-items: center; gap: 9px; padding: 10px 12px 7px; }
+.hdr .mark { width: 20px; height: 20px; flex: 0 0 auto; color: var(--accent); filter: drop-shadow(0 0 6px var(--accent-dim)); }
+.hdr .title { display: flex; flex-direction: column; line-height: 1.15; min-width: 0; }
+.hdr .title b { font-size: 11px; letter-spacing: 0.16em; text-transform: uppercase; font-weight: 650; }
+.hdr .title span { font-family: var(--mono); font-size: 9.5px; letter-spacing: 0.04em; color: var(--mute2); }
+.hdr .spacer { flex: 1; }
+.iconbtn { appearance: none; border: 1px solid var(--hair); background: transparent; color: var(--mute); width: 26px; height: 26px; border-radius: 7px; display: grid; place-items: center; cursor: pointer; transition: all .15s ease; }
+.iconbtn:hover { color: var(--accent); border-color: var(--accent-dim); background: var(--accent-soft); }
+.iconbtn:active { transform: scale(.92); }
+.iconbtn svg { width: 14px; height: 14px; }
+.iconbtn.spin svg { animation: spin .6s ease; }
+
+.tabs { display: flex; gap: 4px; padding: 0 11px 8px; }
+.tab { appearance: none; position: relative; display: flex; align-items: center; justify-content: center; gap: 6px; background: transparent; border: 1px solid var(--hair); color: var(--mute); cursor: pointer; padding: 6px 7px; border-radius: 7px; flex: 0 0 auto; min-width: 30px; transition: color .14s ease, border-color .14s ease, background .14s ease; }
+.tab:hover { color: var(--vscode-foreground); border-color: var(--mute2); }
+.tab.on { color: var(--accent); border-color: var(--accent); background: var(--accent-soft); flex: 1 1 auto; }
+.tab .tic { width: 14px; height: 14px; display: grid; place-items: center; flex: 0 0 auto; }
+.tab .tic svg { width: 14px; height: 14px; display: block; }
+.tab .tlb { font-family: var(--mono); font-size: 9.5px; letter-spacing: .1em; text-transform: uppercase; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.tab:not(.on) .tlb { display: none; }
+.tabdot { position: absolute; top: 3px; right: 3px; width: 5px; height: 5px; border-radius: 50%; background: var(--warn); box-shadow: 0 0 5px var(--warn); animation: pulse 1.6s ease-in-out infinite; }
+.tabdot.err { background: var(--danger); box-shadow: 0 0 5px var(--danger); }
+.tabdot.run { background: var(--accent); box-shadow: 0 0 5px var(--accent); }
+
+.cp-scope { display: flex; align-items: center; gap: 7px; padding: 13px 14px 5px; font-family: var(--mono); font-size: 9.5px; letter-spacing: 0.18em; text-transform: uppercase; color: var(--mute2); }
+.cp-scope .dot { width: 5px; height: 5px; border-radius: 50%; background: var(--accent); box-shadow: 0 0 5px var(--accent); flex: 0 0 auto; }
+.cp-scope .path { margin-left: auto; font-size: 9px; letter-spacing: .06em; opacity: .8; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 55%; text-transform: none; }
+.row { display: flex; align-items: center; gap: 9px; padding: 5px 11px 5px 14px; border-radius: 7px; margin: 0 4px; min-height: 28px; }
+.row.click { cursor: pointer; }
+.row.click:hover { background: var(--row-hover); }
+.row .led { width: 7px; height: 7px; border-radius: 50%; flex: 0 0 auto; background: var(--led-off); }
+.row .led.on { background: var(--led-on); box-shadow: 0 0 6px var(--led-on); }
+.row .led.run { background: var(--accent); box-shadow: 0 0 6px var(--accent); animation: pulse 1.1s ease-in-out infinite; }
+.row .led.bad { background: var(--danger); box-shadow: 0 0 6px var(--danger); }
+.row .ic { width: 14px; height: 14px; color: var(--mute); flex: 0 0 auto; }
+.row .body { min-width: 0; flex: 1; display: flex; flex-direction: column; line-height: 1.25; }
+.row .body .l { font-size: 12.5px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.row .body .d { font-size: 10.5px; color: var(--mute2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.row .state { white-space: nowrap; font-family: var(--mono); font-size: 9.5px; letter-spacing: .06em; color: var(--mute2); flex: 0 0 auto; }
+.row .state.run { color: var(--accent); }
+.row .state.ok { color: var(--led-on); }
+.row .state.bad { color: var(--danger-text); }
+.row.act { color: var(--accent); margin-top: 2px; }
+.row.act .ic, .row.act .l { color: var(--accent); }
+.row.act .l { font-weight: 550; }
+.row.act:hover { background: var(--accent-soft); }
+.row.off { opacity: .5; pointer-events: none; }
+.cp-note { margin: 6px 14px 4px; font-family: var(--mono); font-size: 9.5px; line-height: 1.5; color: var(--mute2); }
+.cp-lead { display: flex; align-items: center; gap: 8px; margin: 8px 11px 2px; padding: 7px 9px; border: 1px solid var(--hair); border-left: 2px solid var(--warn); border-radius: 7px; background: var(--hair-soft); font-size: 11px; color: var(--vscode-foreground); }
+.cp-lead button { margin-left: auto; appearance: none; border: 1px solid var(--accent-dim); background: var(--accent-soft); color: var(--accent); font-family: var(--mono); font-size: 9.5px; letter-spacing: .08em; text-transform: uppercase; padding: 3px 8px; border-radius: 6px; cursor: pointer; }
+.cp-scope.sub { padding-top: 9px; }
+.cp-links a { cursor: pointer; text-decoration: underline; text-decoration-color: var(--hair); }
+.cp-links a:hover { color: var(--accent); }
+.cb { width: 12px; height: 12px; border: 1px solid var(--mute); border-radius: 3px; flex: 0 0 auto; position: relative; }
+.cb.on { background: var(--accent); border-color: var(--accent); }
+.cb.on::after { content: ""; position: absolute; left: 3px; top: 0; width: 3px; height: 7px; border: solid #fff; border-width: 0 1.5px 1.5px 0; transform: rotate(45deg); }
+.cp-field { margin: 2px 14px 4px; }
+.cp-in { width: 100%; appearance: none; border: 1px solid var(--hair); border-radius: 6px; background: var(--hair-soft); color: var(--vscode-foreground); font-family: var(--vscode-font-family); font-size: 12px; padding: 4px 8px; outline: none; }
+.cp-in:focus { border-color: var(--accent-dim); }
+.cp-links a.cur { color: var(--accent); text-decoration: none; font-weight: 600; }
+.cp-cta { margin: 12px 11px 4px; }
+.btn { width: 100%; appearance: none; border: 1px solid var(--accent); background: var(--accent); color: #fff; font-family: var(--vscode-font-family); font-size: 12.5px; font-weight: 600; padding: 8px 10px; border-radius: 8px; cursor: pointer; transition: filter .12s ease; }
+.btn:hover { filter: brightness(1.1); }
+.btn.off { opacity: .4; pointer-events: none; }
+.cp-sub { margin-top: 5px; text-align: center; font-family: var(--mono); font-size: 9.5px; color: var(--mute2); }
+.seg { display: inline-flex; flex: 0 0 auto; border: 1px solid var(--hair); border-radius: 6px; overflow: hidden; }
+.seg a, .seg button { padding: 2px 10px; font-family: var(--mono); font-size: 9.5px; letter-spacing: .08em; cursor: pointer; color: var(--mute); }
+.seg button { appearance: none; border: 0; background: transparent; }
+.seg a.on, .seg button.on { background: var(--accent-soft); color: var(--accent); }
+.metric-sources { display: flex; flex-wrap: wrap; gap: 4px; padding: 0 11px 8px; }
+.metric-sources button { background: transparent; border: 1px solid var(--hair); color: var(--mute); cursor: pointer; border-radius: 5px; padding: 3px 7px; font: 10px var(--mono); }
+.metric-sources button:hover, .metric-sources button[aria-pressed="true"] { color: var(--accent); border-color: var(--accent-dim); background: var(--accent-soft); }
+.row .body .failure { color: var(--danger-text); white-space: normal; }
+.report-actions { display: flex; gap: 6px; }
+.cp-scope .hidden-reports { margin-left: auto; padding: 3px 7px; white-space: nowrap; }
+.row.saved-report { gap: 4px; padding: 0 7px 0 0; }
+.saved-report:hover { background: var(--row-hover); }
+.saved-report .report-open { appearance: none; display: flex; align-items: center; gap: 9px; min-width: 0; flex: 1; padding: 5px 0 5px 14px; border: 0; background: transparent; color: var(--accent); font: inherit; text-align: left; cursor: pointer; }
+.saved-report .report-open .l { font-weight: 550; }
+.saved-report .report-manage { flex: 0 0 auto; padding: 0; font: 16px/1 var(--vscode-font-family); }
+.cp-bar { height: 3px; margin: 2px 14px 6px; background: var(--hair); border-radius: 2px; overflow: hidden; }
+.cp-bar span { display: block; height: 100%; background: var(--accent); transition: width .3s ease; }
+.progress { margin: 10px 14px 4px; border: 1px solid var(--hair); border-radius: 7px; }
+.progress-head { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px; padding: 5px 8px; }
+.progress-toggle { appearance: none; border: 0; background: transparent; color: var(--vscode-foreground); font: inherit; cursor: pointer; padding: 3px 0; text-align: left; min-width: 0; flex: 1 1 105px; }
+.progress-toggle .progress-summary { display: block; color: var(--mute); font-size: 10px; margin-top: 2px; }
+.progress-toggle svg { width: 11px; height: 11px; vertical-align: -1px; margin-right: 4px; }
+.progress-toggle[aria-expanded="true"] svg { transform: rotate(90deg); }
+.progress-body { border-top: 1px solid var(--hair); padding-bottom: 4px; }
+.progress-tools { display: flex; justify-content: flex-end; padding: 6px 8px; }
+.progress-flow { list-style: none; margin: 0; padding: 0 8px 4px 22px; }
+.progress-step { position: relative; margin: 0 0 8px; padding: 0; }
+.progress-step:not(:last-child)::before { content: ""; position: absolute; left: -9px; top: 15px; height: calc(100% + 8px); border-left: 1px solid var(--hair); }
+.progress-step::after { content: ""; position: absolute; top: 12px; left: -12px; width: 7px; height: 7px; border-radius: 100%; background: var(--hair); }
+.progress-step.active::after { background: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft); animation: progress-pulse 1.4s ease-in-out infinite alternate; }
+.progress-step > .row { margin: 0; border: 1px solid var(--hair); border-radius: 6px; }
+.progress-branches { border-left: 1px solid var(--hair); margin: 0 0 0 9px; padding: 0 0 0 7px; }
+.option-switch { display: inline-flex; align-items: center; gap: 6px; padding: 2px; border: 0; color: inherit; background: transparent; cursor: pointer; font: inherit; }
+@keyframes progress-pulse { to { opacity: .5; } }
+@media (prefers-reduced-motion: reduce) { .progress-step.active::after { animation: none; } }
+.splash { min-height: 78vh; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 5px; padding: 24px; text-align: center; }
+.splash .logo { width: 52px; height: 52px; margin-bottom: 8px; }
+.splash .b { transform-box: fill-box; transform-origin: bottom; animation: rise 1.3s ease-in-out infinite; }
+.splash .b1 { fill: var(--c0); } .splash .b2 { fill: var(--c1); animation-delay: .15s; } .splash .b3 { fill: var(--c2); animation-delay: .3s; }
+@keyframes rise { 0%, 100% { transform: scaleY(.55); } 50% { transform: scaleY(1); } }
+.sp-t { font-size: 11px; letter-spacing: .18em; text-transform: uppercase; font-weight: 650; }
+.sp-s { font-family: var(--mono); font-size: 9.5px; letter-spacing: .06em; color: var(--mute2); }
+.sp-bar { width: 150px; height: 3px; margin-top: 14px; background: var(--hair); border-radius: 2px; overflow: hidden; }
+.sp-bar span { display: block; width: 38%; height: 100%; background: var(--accent); border-radius: 2px; animation: slide 1.4s ease-in-out infinite; }
+@keyframes slide { 0% { transform: translateX(-100%); } 100% { transform: translateX(270%); } }
+.sp-m { margin-top: 8px; font-family: var(--mono); font-size: 9.5px; color: var(--mute2); }
+@media (prefers-reduced-motion: reduce) { .splash .b, .sp-bar span { animation: none; } }
+.kv { display: grid; grid-template-columns: 1fr auto; column-gap: 12px; align-items: center; padding: 7px 14px; }
+.kv + .kv { border-top: 1px solid var(--hair-soft); }
+.kv .k { font-size: 12.5px; grid-column: 1; }
+.kv .sub { grid-column: 1; font-family: var(--mono); font-size: 9.5px; letter-spacing: .03em; color: var(--mute2); }
+.kv .v { grid-column: 2; grid-row: 1 / span 2; text-align: right; font-family: var(--mono); font-size: 11px; }
+.kv .dim { color: var(--mute2); }
+.badge { display: inline-flex; align-items: center; gap: 5px; font-family: var(--mono); font-size: 9.5px; letter-spacing: .08em; text-transform: uppercase; padding: 2px 8px; border-radius: 20px; border: 1px solid var(--hair); color: var(--mute); }
+.badge.ok { color: var(--led-on); border-color: color-mix(in srgb, var(--led-on) 45%, transparent); }
+.badge i { width: 5px; height: 5px; border-radius: 50%; background: var(--led-on); }
+.btns { display: flex; gap: 6px; padding: 8px 14px 4px; }
+.btn.sm { width: auto; padding: 5px 12px; font-size: 11.5px; font-weight: 550; background: transparent; color: var(--vscode-foreground); border-color: var(--hair); }
+.btn.sm:hover { border-color: var(--accent); color: var(--accent); filter: none; }
+.btn.sm.pri { background: var(--accent); color: #fff; border-color: var(--accent); }
+.btn.sm.pri:hover { color: #fff; filter: brightness(1.1); }
+.out { margin: 6px 14px; padding: 6px 9px; border-left: 2px solid var(--hair); font-family: var(--mono); font-size: 10px; line-height: 1.55; color: var(--mute); }
+.out.ok { border-left-color: var(--led-on); }
+.out.bad { border-left-color: var(--danger); }
+.rb { width: 12px; height: 12px; border: 1px solid var(--mute); border-radius: 50%; flex: 0 0 auto; }
+.rb.on { border-color: var(--accent); background: radial-gradient(var(--accent) 0 42%, transparent 48%); }
+.row .state.max { color: var(--vscode-foreground); font-size: 11px; }
+.cp-scope.click { cursor: pointer; }
+.cp-scope .chev { width: 10px; height: 10px; flex: 0 0 auto; transition: transform .15s ease; }
+.cp-scope.closed .chev { transform: rotate(-90deg); }
+/*__METRICS_CSS__*/
+.row .state { width: auto; min-width: 24px; }
+</style>
+<div id="app"><div class="splash"><svg class="logo" viewBox="0 0 64 64" aria-hidden="true"><rect class="b b1" x="10" y="32" width="12" height="22" rx="4"/><rect class="b b2" x="26" y="20" width="12" height="34" rx="4"/><rect class="b b3" x="42" y="8" width="12" height="46" rx="4"/></svg><div class="sp-t">Claude Report</div><div class="sp-s">for Claude Code</div><div class="sp-bar"><span></span></div><div class="sp-m">Reading your sessions…</div></div></div>
+<script>
+/*__METRICS_JS__*/
+(function () {
+  var api = typeof acquireVsCodeApi === 'function' ? acquireVsCodeApi() : { postMessage: function () {}, getState: function () { return null; }, setState: function () {} };
+  var saved = api.getState() || {};
+  var S = { tab: 'sessions', openOnly: !!saved.openOnly, metricSource: saved.metricSource || 'all', sel: saved.sel || {}, local: null, sessOnly: !!saved.sessOnly, test: null, d: null, items: [], stage: '', running: false, spin: false };
+  S.progressView = saved.progressView === 'flow' ? 'flow' : 'list';
+  S.phases = [];
+  var app = document.getElementById('app');
+  var splash = function (text) { return '<div class="splash"><svg class="logo" viewBox="0 0 64 64" aria-hidden="true"><rect class="b b1" x="10" y="32" width="12" height="22" rx="4"/><rect class="b b2" x="26" y="20" width="12" height="34" rx="4"/><rect class="b b3" x="42" y="8" width="12" height="46" rx="4"/></svg><div class="sp-t">Claude Report</div><div class="sp-s">for Claude Code</div><div class="sp-bar"><span></span></div><div class="sp-m">' + esc(text) + '</div></div>'; };
+  var esc = function (s) { return String(s == null ? '' : s).replace(/[&<>"]/g, function (c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]; }); };
+  var I = {
+    sessions: '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><path d="M3 4h10M3 8h10M3 12h6"/></svg>',
+    metrics: '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><path d="M3 13V8M8 13V3M13 13V6"/></svg>',
+    report: '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"><path d="M4 2h5l3 3v9H4z"/><path d="M9 2v3h3M6 8h4M6 11h4"/></svg>',
+    connect: '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"><path d="M6 2v4M10 2v4M4.5 6h7v2a3.5 3.5 0 0 1-7 0zM8 11.5V14"/></svg>',
+    refresh: '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M13 8a5 5 0 1 1-1.5-3.5M13 2.5v3h-3"/></svg>',
+    go: '<svg class="ic" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M6 3l5 5-5 5"/></svg>',
+    mark: '<svg class="mark" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M5 19V11M12 19V5M19 19v-6"/></svg>'
+  };
+  var TABS = [['sessions', 'Sessions'], ['metrics', 'Metrics'], ['report', 'Report'], ['connect', 'Connect']];
+  var post = function (m) { api.postMessage(m); };
+  var persist = function () { api.setState({ openOnly: S.openOnly, sessOnly: S.sessOnly, metricSource: S.metricSource, sel: S.sel, progressView: S.progressView }); };
+
+  function tabs() {
+    var d = S.d || {};
+    return '<div class="tabs">' + TABS.map(function (t) {
+      var dot = t[0] === 'connect' && d.connected === false ? '<span class="tabdot"></span>'
+        : t[0] === 'report' && S.running ? '<span class="tabdot run"></span>' : '';
+      return '<button class="tab' + (S.tab === t[0] ? ' on' : '') + '" data-tab="' + t[0] + '" title="' + t[1] + '"><span class="tic">' + I[t[0]] + '</span><span class="tlb">' + t[1] + '</span>' + dot + '</button>';
+    }).join('') + '</div>';
+  }
+
+  function sourceSelection() {
+    var sources = S.d.metricSources || [];
+    if (!sources.some(function (source) { return source.id === S.metricSource; })) return 'all';
+    return S.metricSource;
+  }
+
+  function sourceButtons() {
+    var sources = S.d.metricSources || [];
+    if (!sources.length) return '';
+    var selected = sourceSelection();
+    return '<div class="metric-sources" role="group" aria-label="Metrics activity source">' +
+      sources.concat([{ id: 'all', label: 'All' }]).map(function (source) {
+        return '<button type="button" data-source="' + esc(source.id) + '" aria-pressed="' + (source.id === selected) + '">' + esc(source.label) + '</button>';
+      }).join('') + '</div>';
+  }
+
+  function metricsPage() {
+    var d = S.d;
+    if (!d || !d.metrics) return d && d.error ? '<div class="cp-note">' + esc(d.error) + '</div>' : splash('Reading 30 days of usage…');
+    var selected = sourceSelection();
+    var source = (d.metricSources || []).find(function (item) { return item.id === selected; });
+    var lead = d.connected === false && (selected === 'all' || selected === 'claude')
+      ? '<div class="cp-lead"><span>Plan usage needs Claude Code connected.</span><button data-tab="connect">Connect</button></div>' : '';
+    var metrics = source ? source.metrics : d.metrics;
+    var plan = selected !== 'codex' && metrics.showUsageTrend !== false;
+    return lead + window.ClaudeReportMetrics.render(Object.assign({}, metrics, {
+      showUsageTrend: plan,
+      live: d.live || metrics.live,
+      history: d.planHistory || metrics.history
+    }), { openOnly: S.openOnly });
+  }
+
+  // The same list the Claude Code panel shows: newest first, a click resumes the session.
+  function sessionsPage() {
+    var d = S.d || {};
+    if (!d.sessions) return splash('Reading your sessions…');
+    var only = S.sessOnly && d.openProject;
+    var list = d.sessions.filter(function (x) { return !only || x.project === d.openProject; });
+    var h = '<div class="row act click" data-act="newSession"><svg class="ic" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><path d="M8 3v10M3 8h10"/></svg><div class="body"><div class="l">New session</div></div></div>';
+    h += '<div class="row click' + (d.openProject ? '' : ' off') + '" data-act="sessOnly"><div class="body"><div class="l">Only the open project</div></div><span class="sw' + (only ? ' on' : '') + '"></span><span class="state">' + (only ? 'ON' : 'OFF') + '</span></div>';
+    if (!list.length) return h + '<div class="cp-note">No sessions yet. Start one with Claude Code and it shows up here.</div>';
+    ['Active', 'Today', 'Yesterday', 'Earlier'].forEach(function (g) {
+      var rows = list.filter(function (x) { return x.group === g; });
+      if (!rows.length) return;
+      h += '<div class="cp-scope">' + g + '<span class="path">' + rows.length + '</span></div>';
+      rows.forEach(function (x) {
+        h += '<div class="row click" data-sid="' + esc(x.id) + '" data-cwd="' + esc(x.cwd || '') + '" title="' + esc(x.title) + '"><span class="led ' + (x.active ? (x.status === 'busy' ? 'run' : 'on') : '') + '"></span><div class="body"><div class="l">' + esc(x.title) + '</div><div class="d">' + esc(x.project || '') + '</div></div><span class="state">' + esc(x.age) + '</span></div>';
+      });
+    });
+    return h;
+  }
+
+  var projectId = function (p) { return p.id || p.name; };
+  var chosen = function () {
+    return ((S.d && S.d.reportProjects) || []).filter(function (p) { return p.eligible && S.sel[projectId(p)] !== false; }).map(projectId);
+  };
+
+  function reportDuration(ms) {
+    if (!Number.isFinite(ms) || ms < 0) return '';
+    var seconds = Math.floor(ms / 1000);
+    var minutes = Math.floor(seconds / 60);
+    if (minutes >= 60) return Math.floor(minutes / 60) + 'h ' + (minutes % 60) + 'm';
+    return (minutes ? minutes + 'm ' : '') + seconds % 60 + 's';
+  }
+
+  // One screen, top to bottom: what goes in, what comes out, the button, then what is happening.
+  function progressRow(label, status, error, detail) {
+    var cls = status === 'done' ? 'ok' : status === 'failed' ? 'bad' : status === 'working' || status === 'gathering' ? 'run' : '';
+    var led = cls === 'ok' ? 'on' : cls;
+    return '<div class="row"><span class="led ' + led + '"></span><div class="body"><div class="l">' + esc(label) + '</div>' +
+      (error ? '<div class="d failure">' + esc(error) + '</div>' : detail ? '<div class="d">' + esc(detail) + '</div>' : '') + '</div><span class="state ' + cls + '">' + esc(status) + '</span></div>';
+  }
+
+  function reportProgress() {
+    var projects = S.items.filter(function (it) { return it.status !== 'skipped'; });
+    var finished = projects.filter(function (it) { return it.status === 'done' || it.status === 'failed'; }).length;
+    var failures = projects.filter(function (it) { return it.status === 'failed'; }).length;
+    var result = S.result;
+    var summary = S.running && projects.length ? finished + ' of ' + projects.length + ' finished' : S.stageText || (S.running ? 'Starting report…' : '');
+    if (failures && S.running) summary += ' · ' + failures + ' failed';
+    if (!S.running && result) summary = [summary, reportDuration(result.durationMs)].filter(Boolean).join(' · ');
+    var h = '<section class="progress"><div class="progress-head"><button type="button" id="progress-toggle" class="progress-toggle" data-act="toggleProgress" aria-controls="report-progress-body" aria-expanded="' + !!S.progressOpen + '">' +
+      I.go + 'Progress' + (summary ? '<span class="progress-summary" role="status">' + esc(summary) + '</span>' : '') + '</button>';
+    if (S.running) h += '<button type="button" id="progress-cancel" class="btn sm" data-act="cancelReport">Cancel</button>';
+    if (!S.running && result && result.run) {
+      var ref = ' data-month="' + esc(result.month) + '" data-run="' + esc(result.run) + '"';
+      h += '<button type="button" class="btn sm" data-act="open"' + ref + '>Open report</button>';
+      if (result.partial) h += '<button type="button" class="btn sm" data-act="retryFailed"' + ref + '>Retry failed</button>';
+    }
+    h += '</div><div id="report-progress-body" class="progress-body"' + (S.progressOpen ? '' : ' hidden') + '>';
+    if (!S.progressOpen) return h + '</div></section>';
+    h += '<div class="progress-tools"><div class="seg" role="group" aria-label="Progress view">' +
+      ['list', 'flow'].map(function (view) {
+        var on = S.progressView === view;
+        return '<button type="button" id="progress-' + view + '" data-act="progressView" data-view="' + view + '" class="' + (on ? 'on' : '') +
+          '" aria-pressed="' + on + '">' + (view === 'list' ? 'List' : 'Flow') + '</button>';
+      }).join('') + '</div></div>';
+    if (projects.length) h += '<div class="cp-bar" role="progressbar" aria-label="Projects finished" aria-valuemin="0" aria-valuemax="' + projects.length +
+      '" aria-valuenow="' + finished + '"><span style="width:' + Math.round(finished / projects.length * 100) + '%"></span></div>';
+    var projectRows = projects.map(function (it) { return progressRow(it.project, it.status, it.error, it.detail); }).join('');
+    var status = S.stage === 'error' ? 'failed' : S.stage === 'cancelled' ? 'cancelled' : S.stage === 'done' ? 'done' : 'working';
+    if (S.progressView === 'flow') {
+      h += '<ol class="progress-flow">';
+      S.phases.forEach(function (phase, index) {
+        var current = index === S.phases.length - 1;
+        var phaseStatus = current ? status : 'done';
+        var branches = phase.kind === 'working' && projectRows ? '<div class="progress-branches" role="group" aria-label="Project reports">' + projectRows + '</div>' : '';
+        h += '<li class="progress-step' + (phaseStatus === 'working' ? ' active' : '') + '">' + progressRow(phase.text, phaseStatus) + branches + '</li>';
+      });
+      h += '</ol>';
+    } else {
+      h += projectRows;
+      if (S.stageText) h += progressRow(S.stageText, status);
+    }
+    return h + '</div></section>';
+  }
+
+  function reportPage() {
+    var d = S.d || {};
+    var picks = d.reportProjects || [];
+    var n = chosen().length;
+    var ex = d.export || {};
+    var local = S.local || d.localPrefs || {};
+    var cloud = d.cloud || d.models;
+    var busy = S.running;
+    var h = '<div class="cp-scope"><span class="dot"></span>Report<span class="path">' + esc(d.monthLabel || '') + '</span></div>';
+
+    h += '<div class="cp-scope sub">Projects <span style="opacity:.6;letter-spacing:.04em">· prompts</span><span class="path cp-links"><a data-act="all">all</a> · <a data-act="none">none</a></span></div>';
+    if (!picks.length) h += '<div class="cp-note">' + (d.reportProjects ? 'No project has prompts in the selected dates.' : 'Reading projects…') + '</div>';
+    picks.forEach(function (p) {
+      var id = projectId(p);
+      var on = p.eligible && S.sel[id] !== false;
+      h += '<div class="row click' + (p.eligible && !busy ? '' : ' off') + '" data-proj="' + esc(id) + '"' + (p.hint ? ' title="' + esc(p.hint) + '"' : '') + '><span class="cb' + (on ? ' on' : '') + '"></span><div class="body"><div class="l">' + esc(p.name) + '</div></div><span class="state" title="' + p.prompts + ' prompts">' + p.prompts + '</span></div>';
+    });
+
+    var sw = function (key, label, desc) {
+      return '<div class="row click" data-opt="' + key + '"><div class="body"><div class="l">' + label + '</div><div class="d">' + desc +
+        '</div></div><button type="button" id="report-option-' + key + '" class="option-switch" role="switch" aria-label="' + label +
+        '" aria-checked="' + !!ex[key] + '"><span class="sw' + (ex[key] ? ' on' : '') + '"></span><span class="state">' +
+        (ex[key] ? 'ON' : 'OFF') + '</span></button></div>';
+    };
+    h += '<div class="cp-scope sub">Output</div>';
+    var optionButtons = function (key, label, choices, selected) {
+      return '<div class="row"><div class="body"><div class="l">' + esc(label) + '</div></div><span class="seg" role="group" aria-label="' + esc(label) + '">' +
+        choices.map(function (value) {
+          var on = value === selected;
+          return '<button type="button" id="report-option-' + key + '-' + value + '" data-opt="' + key + '" data-value="' + value + '" class="' + (on ? 'on' : '') + '" aria-pressed="' + on + '">' +
+            value.charAt(0).toUpperCase() + value.slice(1) + '</button>';
+        }).join('') + '</span></div>';
+    };
+    h += optionButtons('depth', 'Report depth', ['quick', 'deep'], ex.depth || 'quick');
+    if (ex.depth === 'deep') h += optionButtons('deepEffort', 'Deep review depth', ['low', 'medium', 'high'], ex.deepEffort || 'medium');
+    h += sw('estimateTime', 'AI time estimates', 'compare example times with and without AI');
+    h += '<div class="row"><div class="body"><div class="l">Date range</div>' +
+      (ex.dateRange ? '<div class="d">' + esc(d.monthLabel) + '</div>' : '') + '</div>' +
+      '<span class="seg" role="group" aria-label="Date range"><button type="button" data-act="reportRange" data-mode-value="month" class="' +
+      (ex.dateRange ? '' : 'on') + '" aria-pressed="' + !ex.dateRange + '">This month</button><button type="button" data-act="reportRange" data-mode-value="custom" class="' +
+      (ex.dateRange ? 'on' : '') + '" aria-pressed="' + !!ex.dateRange + '">Custom…</button></span></div>';
+    h += '<div class="row"><div class="body"><div class="l">Format</div><div class="d">PDF needs Edge or Chrome</div></div><span class="seg"><a data-fmt="html" class="' + (ex.format !== 'pdf' ? 'on' : '') + '">HTML</a><a data-fmt="pdf" class="' + (ex.format === 'pdf' ? 'on' : '') + '">PDF</a></span></div>';
+    h += sw('save', 'Save a copy', esc(ex.folderLabel || 'Downloads') + ' · <span class="cp-links"><a data-act="pickFolder">change</a></span>');
+
+    h += '<div class="cp-cta"><div class="report-actions"><button type="button" class="btn' + (busy || !n ? ' off' : '') + '" data-act="create"' + (busy || !n ? ' disabled' : '') + '>' +
+      (busy ? 'Running report…' : n ? (ex.depth === 'deep' ? 'Create deep report' : 'Create report') + ' · ' + n + ' project' + (n === 1 ? '' : 's') : 'Pick a project') + '</button></div>' +
+      '<div class="cp-sub">' + esc(local.enabled ? (local.model || 'Local model') + ' · full report on this computer' : cloud ? cloud.project + ' per project · ' + cloud.final + ' overview' : '') + '</div></div>';
+
+    h += reportProgress();
+
+    var reps = d.reports || [];
+    if (reps.length || d.archivedReportCount > 0) {
+      h += '<div class="cp-scope sub">Saved reports' + (d.archivedReportCount > 0 ? '<button type="button" class="btn sm hidden-reports" data-act="archivedReports">Hidden reports</button>' : '') + '</div>';
+      reps.forEach(function (r) {
+        var ref = ' data-month="' + esc(r.month) + '"' + (r.run ? ' data-run="' + esc(r.run) + '"' : '');
+        var date = r.run ? r.run.slice(0, 19).replace(/ (\d{2})-(\d{2})-(\d{2})/, ' $1:$2:$3') : '';
+        var label = r.label || r.month;
+        var details = [r.depth, r.projects + (r.projects === 1 ? ' project' : ' projects'), r.partial ? 'partial' : '', r.revision || r.parentRun ? 'revision' : '', reportDuration(r.durationMs), date].filter(Boolean).join(' · ');
+        h += '<div class="row saved-report"><button type="button" class="report-open" data-act="open"' + ref + ' title="' + esc(details) + '">' + I.go + '<span class="body"><span class="l">' + esc(label) + '</span><span class="d">' + esc(details) + '</span></span></button>' +
+          '<button type="button" class="iconbtn report-manage" data-act="manage"' + ref + ' title="Manage report" aria-label="' + esc('Manage ' + label + (date ? ', ' + date : '')) + '">⋯</button></div>';
+      });
+    }
+    h += '<div class="cp-note">Report sources can include Claude Code and Codex. Local runs on this computer. Cloud sends redacted prompts through Claude Code.</div>';
+    return h;
+  }
+
+  // Two blocks: the connection itself, then where each number on the bottom bar comes from.
+  function ago(ms) {
+    var m = Math.round((Date.now() - ms) / 60000);
+    return m < 1 ? 'just now' : m < 60 ? m + ' min ago' : Math.round(m / 60) + ' h ago';
+  }
+
+  // The selected route runs the project summaries and overview.
+  function localBlock() {
+    var P = (S.d && S.d.localPrefs) || {};
+    var L = S.local;
+    var on = L ? L.enabled : !!P.enabled;
+    var cloud = (S.d && S.d.cloud) || {};
+    var row = function (k, sub, v) { return '<div class="kv"><span class="k">' + k + '</span><span class="v">' + v + '</span><span class="sub">' + sub + '</span></div>'; };
+    var h = '<div class="cp-scope">Report model<span class="path">full report</span></div>';
+    h += row('Run on', on ? 'a model on this computer' : 'Claude, through your own Claude Code', '<span class="seg"><a data-mode="cloud" class="' + (on ? '' : 'on') + '">Cloud</a><a data-mode="local" class="' + (on ? 'on' : '') + '">Local</a></span>');
+    if (!on) {
+      h += row('Per project', 'one worker for each project', '<span class="val">' + esc(cloud.project || 'haiku · medium') + '</span>');
+      h += row('Overview', 'writes the three monthly cards', '<span class="val">' + esc(cloud.final || 'sonnet · high') + '</span>');
+      return h;
+    }
+    if (!L || L.checking) return h + row('Checking local server', '', '<span class="dim" role="status">…</span>');
+    if (L.error) return h + row(esc(L.error), '', '<button type="button" class="btn sm" data-act="localScan">Retry</button>');
+    var eng = L.engines.filter(function (e) { return e.engine === L.engine; })[0] || {};
+    h += row('Engine', eng.running ? 'running on ' + esc(eng.baseUrl.replace('http://', '')) : 'not running, start its server', '<span class="seg">' + L.engines.map(function (e) {
+      return '<a data-eng="' + e.engine + '" class="' + (L.engine === e.engine ? 'on' : '') + '">' + esc(e.name) + '</a>';
+    }).join('') + '</span>');
+    if (L.gpu) h += row('GPU', (L.gpu.freeMiB / 1024).toFixed(1) + ' GB free right now', '<span class="val">' + esc(L.gpu.name.replace(/^NVIDIA GeForce /, '')) + ' · ' + Math.round(L.gpu.totalMiB / 1024) + ' GB</span>');
+    else h += row('GPU', 'context limits need an NVIDIA card', '<span class="dim">not detected</span>');
+    if (eng.running) {
+      h += '<div class="cp-scope sub">Models<span class="path">report context</span></div>';
+      if (!L.models.length) h += '<div class="cp-note">No models found.</div>';
+      L.models.forEach(function (m) {
+        var sel = L.model ? L.model === m.id : m.state === 'loaded';
+        var size = m.sizeBytes ? (m.sizeBytes / 1e9).toFixed(1) + ' GB' : '';
+        var meta = [m.quantization, size, m.state === 'loaded' ? 'loaded' : ''].filter(Boolean).join(' · ');
+        var title = 'Model limit: ' + (m.maxContextLabel || '?') + ' tokens. ' + (m.loadedContext ? 'Using the loaded context.' : m.reportContextLabel ? 'New loads target up to 90% GPU memory.' : 'GPU fit is unavailable.');
+        h += '<div class="row click" data-lm="' + esc(m.id) + '" title="' + esc(title) + '"><span class="rb' + (sel ? ' on' : '') + '"></span><div class="body"><div class="l">' + esc(m.id) + '</div><div class="d">' + esc(meta) + '</div></div><span class="state max">' + esc(m.reportContextLabel || m.maxOnGpuLabel || '') + '</span></div>';
+      });
+    }
+    var model = L.models.find(function (m) { return L.model ? m.id === L.model || m.instanceId === L.model : m.state === 'loaded'; });
+    if (model) {
+      var options = model.reasoning || [];
+      var supportsOn = options.indexOf('low') >= 0 || options.indexOf('on') >= 0;
+      var label = options.indexOf('low') >= 0 ? 'On uses Low' : 'On uses the model’s thinking setting';
+      if (options.length && options.indexOf('off') < 0) label += ' · Off unavailable';
+      if (supportsOn) {
+        var off = options.indexOf('off') >= 0;
+        h += row('Thinking', label, '<span class="seg"><button type="button" data-thinking="off" class="' + (L.thinking ? '' : 'on') + '" aria-pressed="' + !L.thinking + '"' + (off ? '' : ' disabled') + '>Off</button><button type="button" data-thinking="on" class="' + (L.thinking ? 'on' : '') + '" aria-pressed="' + !!L.thinking + '">On</button></span>');
+      } else if (L.thinking) {
+        h += row('Thinking', 'This model exposes no compatible On setting', '<span class="seg"><button type="button" data-thinking="off">Use Off</button></span>');
+      }
+    }
+    h += '<div class="cp-note">Project summaries and the overview run on this computer. GPU context limits are estimates.</div>';
+    return h;
+  }
+
+  function connectPage() {
+    var d = S.d || {};
+    var live = d.live;
+    var kv = function (k, sub, v) { return '<div class="kv"><span class="k">' + k + '</span><span class="v">' + v + '</span><span class="sub">' + sub + '</span></div>'; };
+    var badge = function (on, text) { return '<span class="badge ' + (on ? 'ok' : 'off') + '">' + (on ? '<i></i>' : '') + text + '</span>'; };
+    var btn = function (act, label, primary) { return '<button type="button" class="btn sm' + (primary ? ' pri' : '') + '" data-act="' + act + '">' + label + '</button>'; };
+
+    var h = '<div class="cp-scope"><span class="dot"></span>Connection<span class="path">~/.claude/settings.json</span></div>';
+    h += kv('Status line hook', 'runs after each Claude Code response', badge(d.connected, d.connected ? 'Connected' : 'Not connected'));
+    if (d.connected && d.hookLegacy) h += kv('Hook copy', 'points at the old Companio folder', btn('connect', 'Update'));
+    if (d.connected && d.chainMissing) h += kv('Previous status line', 'the program it ran is gone', btn('dropChain', 'Remove'));
+    h += '<div class="btns">' + (d.connected ? btn('test', 'Test') + btn('disconnect', 'Disconnect') : btn('connect', 'Connect', true)) + '</div>';
+    if (S.test) {
+      h += '<div class="out ' + (S.test.ok ? 'ok' : 'bad') + '">' + S.test.lines.map(esc).join('<br>') + '</div>';
+    }
+
+    h += '<div class="cp-scope">Bottom bar</div>';
+    h += kv('Model and context', 'session transcripts, no setup', '<span class="val">' + (live && live.model ? esc(live.model) + (live.ctxPct != null ? ' · ' + Math.round(live.ctxPct) + '%' : '') : '—') + '</span>');
+    h += kv('5h and 7d usage', 'status line hook', '<span class="val">' + (live && live.fiveHour ? Math.round(live.fiveHour.pct) + '% · ' + (live.sevenDay ? Math.round(live.sevenDay.pct) + '%' : '—') : '<span class="dim">' + (d.connected ? 'waiting' : 'needs Connect') + '</span>') + '</span>');
+    h += kv('Last reading', live ? (live.source === 'hook' ? 'from the hook' : 'from transcripts') : 'none yet', '<span class="val">' + (live && live.updatedAt ? ago(live.updatedAt) : '—') + '</span>');
+    h += localBlock();
+    h += '<div class="cp-note">Usage windows appear on Pro, Max, Team and Ultra plans after the first response of a session. If the reading never updates, run Test.</div>';
+    return h;
+  }
+
+  var holdUntil = typeof window.matchMedia === 'function' && !window.matchMedia('(prefers-reduced-motion: reduce)').matches ? Date.now() + 900 : 0;
+
+  var lastMarkup = '';
+  function render() {
+    if (!S.d || Date.now() < holdUntil) {
+      app.innerHTML = splash('Reading your sessions…');
+      if (S.d) setTimeout(render, holdUntil - Date.now() + 20);
+      return;
+    }
+    var page = S.tab === 'report' ? reportPage() : S.tab === 'connect' ? connectPage() : S.tab === 'metrics' ? metricsPage() : sessionsPage();
+    var markup = '<div class="top"><div class="hdr">' + I.mark + '<div class="title"><b>Claude Report</b><span>' + esc((S.d && S.d.version) || '') + ' · cockpit</span></div><div class="spacer"></div>' +
+      '<button class="iconbtn' + (S.spin ? ' spin' : '') + '" data-act="refresh" title="Refresh">' + I.refresh + '</button></div>' + (S.tab === 'metrics' ? sourceButtons() : '') + tabs() + '</div><div id="page">' + page + '</div>';
+    if (markup === lastMarkup) return;
+    lastMarkup = markup;
+    var focused = document.activeElement && document.activeElement.id;
+    app.innerHTML = markup;
+    if (focused && /^(?:progress-(toggle|list|flow|cancel)|report-option-\w+(?:-\w+)?)$/.test(focused)) {
+      var replacement = document.getElementById(focused);
+      replacement?.focus?.();
+    }
+    if (S.tab === 'metrics' && S.d && S.d.metrics) {
+      window.ClaudeReportMetrics.bind(document.getElementById('page'), { openOnly: S.openOnly }, function (s) { S.openOnly = s.openOnly; persist(); render(); });
+    }
+  }
+
+  app.addEventListener('click', function (e) {
+    var t = e.target.closest('[data-tab],[data-act],[data-proj],[data-opt],[data-fmt],[data-sid],[data-eng],[data-lm],[data-mode],[data-source],[data-thinking]');
+    if (!t) return;
+    if (t.dataset.tab) { S.tab = t.dataset.tab; persist(); render(); if (S.tab === 'connect' && ((S.d && S.d.localPrefs) || {}).enabled && !S.local) post({ cmd: 'localScan' }); return; }
+    if (t.dataset.source) { S.metricSource = t.dataset.source; persist(); render(); return; }
+    if (t.dataset.mode) {
+      S.local = { enabled: t.dataset.mode === 'local', checking: true };
+      render();
+      post({ cmd: 'localMode', mode: t.dataset.mode });
+      return;
+    }
+    if (t.dataset.thinking) { post({ cmd: 'localThinking', enabled: t.dataset.thinking === 'on' }); return; }
+    if (t.dataset.eng) { post({ cmd: 'localEngine', engine: t.dataset.eng }); return; }
+    if (t.dataset.lm) { post({ cmd: 'localPick', model: t.dataset.lm }); return; }
+    if (t.dataset.sid) { post({ cmd: 'resume', id: t.dataset.sid, cwd: t.dataset.cwd, title: t.title }); return; }
+    if (t.dataset.opt) {
+      var key = t.dataset.opt;
+      var output = (S.d && S.d.export) || {};
+      var value = t.dataset.value || !output[key];
+      if (S.d && ['depth', 'deepEffort', 'estimateTime'].indexOf(key) >= 0) {
+        S.d.export = Object.assign({}, output, { [key]: value });
+        render();
+      }
+      post({ cmd: 'opt', key: key, value: value });
+      return;
+    }
+    if (t.dataset.fmt) { post({ cmd: 'opt', key: 'format', value: t.dataset.fmt }); return; }
+    if (t.dataset.proj) { S.sel[t.dataset.proj] = S.sel[t.dataset.proj] === false; persist(); render(); return; }
+    var a = t.dataset.act;
+    if (a === 'refresh') { S.spin = true; render(); post({ cmd: 'refresh' }); setTimeout(function () { S.spin = false; }, 700); }
+    else if (a === 'all' || a === 'none') { ((S.d && S.d.reportProjects) || []).forEach(function (p) { S.sel[projectId(p)] = a === 'all'; }); persist(); render(); }
+    else if (a === 'create') post({ cmd: 'create', projects: chosen() });
+    else if (a === 'reportRange') post({ cmd: 'reportRange', mode: t.dataset.modeValue });
+    else if (a === 'toggleProgress') { S.progressOpen = !S.progressOpen; render(); }
+    else if (a === 'progressView') { S.progressView = t.dataset.view === 'flow' ? 'flow' : 'list'; persist(); render(); }
+    else if (a === 'cancelReport' || a === 'archivedReports') post({ cmd: a });
+    else if (a === 'dropChain') post({ cmd: 'dropChain' });
+    else if (a === 'newSession') post({ cmd: 'newSession' });
+    else if (a === 'sessOnly') { S.sessOnly = !S.sessOnly; persist(); render(); }
+    else if (a === 'localScan') post({ cmd: 'localScan' });
+    else if (a === 'pickFolder') post({ cmd: 'pickFolder' });
+    else if (a === 'test') { S.test = null; post({ cmd: 'test' }); }
+    else if (a === 'open' || a === 'manage' || a === 'retryFailed') post(Object.assign({ cmd: a, month: t.dataset.month }, t.dataset.run ? { run: t.dataset.run } : {}));
+    else if (a === 'connect') post({ cmd: 'connect' });
+    else if (a === 'disconnect') post({ cmd: 'disconnect' });
+  });
+
+  app.addEventListener('change', function (e) {
+    var el = e.target;
+    if (el && el.dataset && el.dataset.optInput) post({ cmd: 'opt', key: el.dataset.optInput, value: el.value });
+  });
+
+  window.addEventListener('message', function (e) {
+    var m = e.data || {};
+    if (m.type === 'state') { S.d = m.d; render(); }
+    else if (m.type === 'local') { S.local = m.d; render(); }
+    else if (m.type === 'test') { S.test = { ok: m.ok, lines: m.lines || [] }; render(); }
+    else if (m.type === 'tab') { S.tab = m.tab; persist(); render(); }
+    else if (m.type === 'runStart') {
+      S.items = []; S.phases = []; S.result = null; S.stage = ''; S.stageText = ''; S.running = true; S.progressOpen = true;
+      render();
+    } else if (m.type === 'progress') {
+      var it = S.items.filter(function (x) { return x.project === m.project; })[0];
+      if (it) { it.status = m.status; it.error = m.error; it.detail = m.detail; }
+      else S.items.push({ project: m.project, status: m.status, detail: m.detail, error: m.error });
+      render();
+    } else if (m.type === 'stage') {
+      S.stage = m.stage; S.stageText = m.text || '';
+      S.running = !!m.stage && m.stage !== 'done' && m.stage !== 'error' && m.stage !== 'cancelled';
+      if (S.running) {
+        if (!S.phases.some(function (phase) { return phase.kind === m.stage && phase.text === m.text; })) {
+          if (!S.phases.length) S.progressOpen = true;
+          S.phases.push({ kind: m.stage, text: S.stageText });
+        }
+      } else {
+        S.result = m;
+        if (m.stage === 'cancelled' || m.stage === 'error') {
+          S.items.forEach(function (item) {
+            if (item.status === 'working' || item.status === 'gathering' || item.status === 'queued') {
+              item.status = m.stage === 'cancelled' ? 'cancelled' : 'stopped';
+            }
+          });
+        }
+        if (m.partial || m.stage === 'error') S.progressOpen = true;
+        else if (m.stage === 'done' && m.run) S.progressOpen = false;
+      }
+      render();
+    } else if (m.type === 'running') { S.running = !!m.on; render(); }
+  });
+
+  post({ cmd: 'ready' });
+})();
+</script>
