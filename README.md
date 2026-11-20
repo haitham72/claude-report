@@ -2,6 +2,10 @@
 
 # Claude Report
 
+[![Marketplace version](https://img.shields.io/visual-studio-marketplace/v/haitham72.claude-report)](https://marketplace.visualstudio.com/items?itemName=haitham72.claude-report)
+[![Installs](https://img.shields.io/visual-studio-marketplace/i/haitham72.claude-report)](https://marketplace.visualstudio.com/items?itemName=haitham72.claude-report)
+[![License: MIT](https://img.shields.io/badge/license-MIT-blue)](LICENSE)
+
 Claude Report is a VS Code extension for reviewing Claude Code and Codex activity, monitoring Claude plan usage, and writing project achievement reports. It runs in VS Code and compatible editors such as Cursor and Antigravity.
 
 Claude Report is an independent project. It is not made, endorsed or sponsored by Anthropic or OpenAI. Claude and Claude Code are trademarks of Anthropic, PBC.
@@ -14,7 +18,7 @@ Claude Report is an independent project. It is not made, endorsed or sponsored b
 
 ## Install and start
 
-1. Search for **Claude Report** in the Extensions view, or install it from the [Visual Studio Marketplace](https://marketplace.visualstudio.com/items?itemName=haitham72.claude-report). Cursor, Antigravity and VSCodium use [Open VSX](https://open-vsx.org/extension/haitham72/claude-report). To install a release file instead, choose **Extensions → Install from VSIX…**, or run `code --install-extension claude-report-<version>.vsix`. Local builds are in `dist/`.
+1. Search for **Claude Report** in the Extensions view, or install it from the [Visual Studio Marketplace](https://marketplace.visualstudio.com/items?itemName=haitham72.claude-report). Cursor, Antigravity and VSCodium: install the `.vsix` from the [latest release](https://github.com/haitham72/claude-report/releases/latest) until it is listed on Open VSX. To install a release file instead, choose **Extensions → Install from VSIX…**, or run `code --install-extension claude-report-<version>.vsix`. Local builds are in `dist/`.
 2. Open **Claude Report** in the activity bar. **Sessions** shows Claude Code history. **Metrics** reads the last 30 days of activity from local transcripts.
 3. Optionally open **Connect** and install the Claude Code status line hook. This requires Node.js on your PATH. The hook keeps your previous status line and supports **Disconnect**.
 4. In **Report**, choose a month or custom date range, select your projects, choose **Quick** or **Deep**, and press **Create report**. Cloud generation requires the signed-in `claude` command. Local generation requires a model in LM Studio or Ollama.

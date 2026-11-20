@@ -91,6 +91,10 @@ After the first publish, add the badges below the title in the README and check 
 [![Open VSX](https://img.shields.io/open-vsx/v/haitham72/claude-report)](https://open-vsx.org/extension/haitham72/claude-report)
 ```
 
+## Publishing without a token
+
+The Marketplace also accepts a manual upload, which needs no Azure DevOps organization or token. Open https://marketplace.visualstudio.com/manage, choose the publisher, then **+ New extension**, **Visual Studio Code**, and upload `dist/claude-report-<version>.vsix`. To update, use the extension's menu, **Update**, and upload the new file. Version 0.11.0 was published this way on 20 November 2026. Open VSX still needs its own token.
+
 ## GitHub repository
 
 - Set the description, website and topics in the repository settings, for example topics `vscode-extension`, `claude-code`, `codex`, `usage-tracking` and `ai-report`.
