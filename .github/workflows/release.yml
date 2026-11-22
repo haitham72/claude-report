@@ -1,13 +1,15 @@
 name: Release
 
 # Pushing a tag like v0.11.1 tests, packages and publishes that version. Ordinary pushes never publish.
-# Secrets: VSCE_PAT (VS Code Marketplace) and OVSX_PAT (Open VSX). A store whose secret is missing is skipped.
+# Open VSX uses trusted publishing (GitHub OIDC, no secret): register this repository and release.yml under the
+# extension's Trusted Publishers on open-vsx.org. The VS Code Marketplace needs the VSCE_PAT secret and is skipped without it.
 on:
   push:
     tags: ['v*']
 
 permissions:
   contents: write
+  id-token: write
 
 jobs:
   test:
@@ -50,11 +52,7 @@ jobs:
           npx --yes @vscode/vsce publish --no-dependencies --packagePath "${{ steps.version.outputs.vsix }}"
 
       - name: Publish to Open VSX
-        env:
-          OVSX_PAT: ${{ secrets.OVSX_PAT }}
-        run: |
-          if [ -z "$OVSX_PAT" ]; then echo "::warning::OVSX_PAT is not set, skipping Open VSX"; exit 0; fi
-          npx --yes ovsx publish "${{ steps.version.outputs.vsix }}"
+        run: npx --yes ovsx publish "${{ steps.version.outputs.vsix }}" --trusted-publishing
 
       - name: Create the GitHub release
         env:

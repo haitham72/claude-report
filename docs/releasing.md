@@ -76,7 +76,7 @@ Keep both tokens out of the repository, the shell history and chat. Prefer the `
 
 ## Publishing
 
-Releases publish from GitHub Actions ([release.yml](../.github/workflows/release.yml)). Add the two tokens once under the repository's **Settings → Secrets and variables → Actions** as `VSCE_PAT` and `OVSX_PAT`. A store whose secret is missing is skipped with a warning.
+Releases publish from GitHub Actions ([release.yml](../.github/workflows/release.yml)). Open VSX needs no token: on open-vsx.org, open the extension under **Settings → Extensions**, choose **Add a trusted publisher**, and enter owner `haitham72`, repository `claude-report`, workflow `release.yml` and no environment. The VS Code Marketplace needs a `VSCE_PAT` secret under the repository's **Settings → Secrets and variables → Actions**; without it that step is skipped with a warning.
 
 1. Update `CHANGELOG.md` and the `version` in `package.json`, and commit.
 2. Push the commit, then a tag for that version:
