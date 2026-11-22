@@ -2,6 +2,10 @@
 
 All notable changes are listed here, newest first.
 
+## 0.11.1
+
+- Rewrites the README, which is also the Marketplace page, as a short product page: a cover, a GIF of a report, and four images for plan usage, what you shipped, prompting advice and evidence. The full manual moves to `docs/guide.md`.
+
 ## 0.11.0
 
 - Adds an Advice section to Quick and Deep reports, apart from the achievement overview: one strength, one thing to watch and one habit to try, each with where it was seen. Project cards now write a short note on how prompts were phrased, and the advice is built from those notes or from the Deep reviews. Under ten prompts it is labelled a first look, and it never gives scores.

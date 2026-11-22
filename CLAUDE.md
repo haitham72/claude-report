@@ -1,6 +1,6 @@
 ﻿# Claude Report
 
-Read [README.md](README.md) for the product, supported sources, build, and project layout. Read [HANDOFF.md](HANDOFF.md) for local work in progress when the file exists.
+Read [README.md](README.md) for what the product does and [docs/guide.md](docs/guide.md) for supported sources, build, and project layout. Read [HANDOFF.md](HANDOFF.md) for local work in progress when the file exists.
 
 | Work | Start here |
 | --- | --- |

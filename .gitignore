@@ -15,3 +15,5 @@ HANDOFF.md
 .playwright-mcp/
 debug.log
 /screenshots/
+design/gif-report.html
+design/gif-frame.html

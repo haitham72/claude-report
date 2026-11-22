@@ -1,0 +1,164 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=1280">
+<title>Claude Report marketplace images</title>
+<!-- Designed images for the README, which is also the Marketplace page. All content is invented.
+     Each artboard is chosen by the hash: #cover (1280x640), #metrics, #report, #advice, #evidence (1280x720).
+     Render each at its size with a device scale factor of 2 into media/marketplace/<name>.png. -->
+<style>
+  :root { --bg: #111113; --card: #1a1a1d; --line: #2c2c31; --fill: #26262b; --fg: #f4f4f6; --sec: #9d9da6; --accent: #6cb0ff; --ok: #5fd07a; --warn: #f0b24a; --del: #ff7b72;
+    --sans: "Segoe UI Variable Display", "Segoe UI", -apple-system, BlinkMacSystemFont, system-ui, sans-serif; --mono: "Cascadia Mono", Consolas, ui-monospace, monospace; }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body { background: var(--bg); overflow: hidden; }
+  body { font-family: var(--sans); color: var(--fg); -webkit-font-smoothing: antialiased; }
+  .board { display: none; position: relative; width: 1280px; height: 720px; }
+  .board:target { display: flex; }
+
+  /* Cover */
+  #cover { height: 640px; flex-direction: column; align-items: center; justify-content: center; text-align: center; }
+  #cover svg { width: 88px; height: 88px; }
+  #cover h1 { margin-top: 32px; font-size: 76px; font-weight: 700; letter-spacing: -.03em; line-height: 1; }
+  #cover p { margin-top: 22px; font-size: 28px; color: var(--sec); }
+
+  /* Feature boards: words left, one simplified view right */
+  .feature { align-items: center; gap: 72px; padding: 0 80px; }
+  .words { width: 420px; flex: none; }
+  .words h2 { font-size: 52px; line-height: 1.08; font-weight: 700; letter-spacing: -.025em; }
+  .words p { margin-top: 22px; font-size: 24px; line-height: 1.45; color: var(--sec); }
+  .view { flex: 1; }
+  .card { background: var(--card); border: 1px solid var(--line); border-radius: 18px; }
+
+  /* Metrics */
+  .gauges { padding: 36px 40px; }
+  .gauge + .gauge { margin-top: 30px; }
+  .gtop { display: flex; justify-content: space-between; align-items: baseline; font-size: 26px; }
+  .gtop b { font-size: 34px; color: var(--accent); }
+  .track { margin-top: 12px; height: 12px; border-radius: 6px; background: var(--fill); }
+  .track i { display: block; height: 100%; border-radius: 6px; background: var(--accent); }
+  .gnote { margin-top: 10px; font-size: 19px; color: var(--sec); }
+  .stats { display: grid; grid-template-columns: repeat(3, 1fr); margin-top: 34px; padding-top: 28px; border-top: 1px solid var(--line); }
+  .stats b { display: block; font-size: 38px; letter-spacing: -.02em; }
+  .stats span { font-size: 19px; color: var(--sec); }
+
+  /* Report */
+  .shipped { padding: 30px 36px; }
+  .sum { display: flex; gap: 40px; padding-bottom: 24px; border-bottom: 1px solid var(--line); }
+  .sum b { display: block; font-size: 38px; letter-spacing: -.02em; }
+  .sum span { font-size: 19px; color: var(--sec); }
+  .row { display: flex; gap: 18px; padding-top: 22px; }
+  .row i { flex: none; width: 12px; height: 12px; margin-top: 11px; border-radius: 50%; background: var(--k); }
+  .row b { display: block; font-size: 25px; }
+  .row p { margin-top: 4px; font-size: 21px; line-height: 1.4; color: var(--sec); }
+  .c1 { --k: #6cb0ff; } .c2 { --k: #5fd07a; } .c3 { --k: #f0b24a; }
+
+  /* Advice */
+  .tips { display: grid; gap: 14px; }
+  .tip { padding: 22px 28px 24px; border-left: 4px solid var(--k); }
+  .tip span { font-size: 20px; font-weight: 600; color: var(--k); }
+  .tip p { margin-top: 6px; font-size: 27px; line-height: 1.35; }
+  .s { --k: var(--ok); } .w { --k: var(--warn); } .t { --k: var(--accent); }
+
+  /* Evidence */
+  .trace { padding: 32px 36px; }
+  .trace q { display: block; font-size: 27px; line-height: 1.4; font-style: italic; quotes: "\201C" "\201D"; }
+  .ref { margin-top: 10px; font-size: 18px; color: var(--sec); }
+  .finding { margin-top: 18px; font-size: 23px; line-height: 1.4; }
+  .finding b { color: var(--ok); font-weight: 600; margin-right: 8px; }
+  .part { margin-top: 24px; padding-top: 22px; border-top: 1px solid var(--line); }
+  .part h3 { font-size: 18px; font-weight: 600; color: var(--sec); margin-bottom: 12px; }
+  .file { display: flex; align-items: center; gap: 12px; font-family: var(--mono); font-size: 20px; }
+  .file + .file { margin-top: 10px; }
+  .file code { flex: 1; }
+  .chip { font-size: 17px; padding: 3px 10px; border-radius: 7px; }
+  .del { color: var(--del); background: rgba(255,123,114,.12); }
+  .add { color: var(--ok); background: rgba(95,208,122,.12); }
+  .commit { display: flex; gap: 14px; align-items: baseline; font-size: 22px; }
+  .commit code { font-family: var(--mono); font-size: 19px; color: var(--sec); }
+</style>
+</head>
+<body>
+
+<section class="board" id="cover">
+  <svg viewBox="0 0 128 128" role="img" aria-label="Claude Report icon"><rect width="128" height="128" rx="28" fill="#26262b"/><rect x="24" y="64" width="20" height="44" rx="6" fill="#4f8cff"/><rect x="52" y="38" width="20" height="70" rx="6" fill="#30d158"/><rect x="80" y="12" width="20" height="96" rx="6" fill="#ff9f0a"/></svg>
+  <h1>Claude Report</h1>
+  <p>Usage, prompting advice and reports for Claude Code and Codex.</p>
+</section>
+
+<section class="board feature" id="metrics">
+  <div class="words">
+    <h2>Know where your plan stands.</h2>
+    <p>Five-hour and weekly usage, burn rate and tokens, live in the sidebar.</p>
+  </div>
+  <div class="view card gauges">
+    <div class="gauge">
+      <div class="gtop"><span>5-hour session</span><b>16%</b></div>
+      <div class="track"><i style="width:16%"></i></div>
+      <p class="gnote">+2.1% an hour · resets before full in 2h 0m</p>
+    </div>
+    <div class="gauge">
+      <div class="gtop"><span>Weekly</span><b>28%</b></div>
+      <div class="track"><i style="width:28%"></i></div>
+      <p class="gnote">Resets in 3d 11h</p>
+    </div>
+    <div class="stats">
+      <div><b>340M</b><span>tokens, 30 days</span></div>
+      <div><b>3.8k</b><span>turns</span></div>
+      <div><b>95%</b><span>from cache</span></div>
+    </div>
+  </div>
+</section>
+
+<section class="board feature" id="report">
+  <div class="words">
+    <h2>See what you shipped.</h2>
+    <p>Pick a month. Get each project's work, examples and time saved, written from your sessions.</p>
+  </div>
+  <div class="view card shipped">
+    <div class="sum">
+      <div><b>6</b><span>projects</span></div>
+      <div><b>18</b><span>examples</span></div>
+      <div><b>~50 h</b><span>saved, estimated</span></div>
+    </div>
+    <div class="row c1"><i></i><div><b>web-storefront</b><p>Fixed rounding in order totals and rebuilt the image gallery.</p></div></div>
+    <div class="row c2"><i></i><div><b>payments-api</b><p>Webhook retries with backoff and a refund count fix.</p></div></div>
+    <div class="row c3"><i></i><div><b>mobile-app</b><p>Dark mode for settings and a permission prompt fix.</p></div></div>
+  </div>
+</section>
+
+<section class="board feature" id="advice">
+  <div class="words">
+    <h2>Advice on how you prompt.</h2>
+    <p>One strength, one thing to watch and one habit to try, from your own prompts. No scores.</p>
+  </div>
+  <div class="view tips">
+    <div class="card tip s"><span>Strength</span><p>You state the goal and the failing case first.</p></div>
+    <div class="card tip w"><span>Watch</span><p>Short follow-ups get asked again in new words.</p></div>
+    <div class="card tip t"><span>Try</span><p>Say what you already tried before the question.</p></div>
+  </div>
+</section>
+
+<section class="board feature" id="evidence">
+  <div class="words">
+    <h2>Every finding shows its source.</h2>
+    <p>Deep reviews quote your prompt, then list the changed lines and commits behind it.</p>
+  </div>
+  <div class="view card trace">
+    <q>order 1042 should total 19.90, we show 19.89. run the totals test after</q>
+    <p class="ref">Your prompt · Claude Code · 3 Nov</p>
+    <p class="finding"><b>Strength</b>Gives the failing case, the expected value and the check.</p>
+    <div class="part">
+      <h3>Changed lines</h3>
+      <div class="file"><code>src/checkout/totals.ts</code><span class="chip del">−41,7</span><span class="chip add">+41,12</span></div>
+      <div class="file"><code>test/totals.test.ts</code><span class="chip add">+1,26</span></div>
+    </div>
+    <div class="part">
+      <h3>Commit</h3>
+      <div class="commit"><code>3f617ff</code><span>Fix rounding in order totals</span></div>
+    </div>
+  </div>
+</section>
+
+</body>
+</html>

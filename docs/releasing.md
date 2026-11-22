@@ -46,6 +46,13 @@ This writes `design/demo-preview.html` (the real sidebar inside a mock editor, w
 | `report-advice.png` | Element screenshot of `#advice` with a small margin |
 | `social-preview.png` | Open `design/social-preview.html` from a server that serves the repository root, at 1280 by 640 |
 
+The README is also the Marketplace page. Its images in `media/marketplace/` are designed, not screenshots:
+
+- `cover.png`, `metrics.png`, `report.png`, `advice.png` and `evidence.png` come from `design/marketplace-ads.html`. Open it with `#cover` at 1280 by 640, or with `#metrics`, `#report`, `#advice` or `#evidence` at 1280 by 720, at a device scale factor of 2, and save each as `media/marketplace/<name>.png`.
+- `report.gif` comes from `node design/build-gif.js` after `DEMO=1 node design/build-preview.js`. It needs Chrome or Edge and `ffmpeg` on the PATH.
+
+The full manual is `docs/guide.md`; its screenshots stay in `media/screenshots/`.
+
 Check that no real project, session or person appears in any image before committing.
 
 ## Accounts you need once
@@ -69,18 +76,23 @@ Keep both tokens out of the repository, the shell history and chat. Prefer the `
 
 ## Publishing
 
+Releases publish from GitHub Actions ([release.yml](../.github/workflows/release.yml)). Add the two tokens once under the repository's **Settings → Secrets and variables → Actions** as `VSCE_PAT` and `OVSX_PAT`. A store whose secret is missing is skipped with a warning.
+
+1. Update `CHANGELOG.md` and the `version` in `package.json`, and commit.
+2. Push the commit, then a tag for that version:
+   ```
+   git push origin main
+   git tag v<version>
+   git push origin v<version>
+   ```
+3. The workflow runs the tests, checks that the tag matches `package.json`, builds the VSIX, publishes it to the Marketplace and Open VSX, and creates a GitHub release with the VSIX and this version's changelog section.
+
+Ordinary pushes never publish. The Marketplace can take several minutes to show a new version while it is scanned. To publish by hand instead:
+
 ```
 npm run package
 npx @vscode/vsce publish --no-dependencies -p <marketplace token>
 npx ovsx publish dist/claude-report-<version>.vsix -p <open-vsx token>
-```
-
-The first Marketplace publish can take several minutes to appear while it is scanned. Then tag the commit and attach the package to a GitHub release:
-
-```
-git tag v<version>
-git push origin main --tags
-gh release create v<version> dist/claude-report-<version>.vsix --title "Claude Report <version>" --notes-file <changelog entry>
 ```
 
 After the first publish, add the badges below the title in the README and check that every image loads on the Marketplace page. Relative image links are rewritten to the GitHub repository, so they only work once the repository is public and the images are pushed.
