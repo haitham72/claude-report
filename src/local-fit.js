@@ -24,21 +24,14 @@ function pickModel(models, wanted) {
     || [...all].sort((a, b) => (a.sizeBytes || Infinity) - (b.sizeBytes || Infinity))[0] || null;
 }
 
-const gb = (bytes) => (bytes / 1e9).toFixed(1) + ' GB';
-const k = (tokens) => Math.round(tokens / 1024) + 'k';
-
 // null when there is nothing to decide; otherwise the message and the best alternative to offer.
+// Asks only when the model file is larger than the GPU memory free right now. A tight context
+// or a cautious budget estimate is not worth interrupting for: the load just goes ahead.
 function fitAdvice(model, gpu, models) {
-  if (!model || model.state === 'loaded' || !gpu || !Number.isFinite(model.reportContext)) return null;
+  if (!model || model.state === 'loaded' || !gpu || !(model.sizeBytes > 0)) return null;
+  if (model.sizeBytes <= gpu.freeMiB * 1024 * 1024) return null;
   const alt = fittingModels(models).find((m) => m.id !== model.id) || null;
-  const free = `${(gpu.freeMiB / 1024).toFixed(1)} GB of ${Math.round(gpu.totalMiB / 1024)} GB GPU memory is free.`;
-  if (model.reportContext === 0) {
-    return { kind: 'spill', alt, message: `${free} ${model.id} needs about ${model.sizeBytes ? gb(model.sizeBytes) : 'more than that'}, so part of it will run from system memory, which is much slower. Close other GPU apps and recheck, load it anyway, or use a model that fits.` };
-  }
-  if (model.reportContext < GOOD_CONTEXT) {
-    return { kind: 'tight', alt, message: `${free} ${model.id} fits, but its context will be limited to ${k(model.reportContext)} tokens, so long projects are trimmed. Free GPU memory and recheck for more.` };
-  }
-  return null;
+  return { kind: 'spill', alt, message: `${model.id} is larger than your free GPU memory, so it may run slower.` };
 }
 
 module.exports = { GOOD_CONTEXT, MIN_CONTEXT, fittingModels, pickModel, fitAdvice };

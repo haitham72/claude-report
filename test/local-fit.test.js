@@ -24,18 +24,17 @@ test('auto-pick takes the loaded model, else the largest comfortable fit', () =>
   assert.strictEqual(pickModel([{ id: 'a', sizeBytes: 9 * GB, reportContext: 0 }, { id: 'b', sizeBytes: 5 * GB, reportContext: 0 }]).id, 'b');
 });
 
-test('advice: spill when the weights do not fit, tight when context is short, silent otherwise', () => {
-  const spill = fitAdvice(models[0], gpu, models);
+test('advice only when the model file is larger than free GPU memory, in one calm sentence', () => {
+  const spill = fitAdvice(models[0], gpu, models); // 9.7 GB file, 8.1 GB free
   assert.strictEqual(spill.kind, 'spill');
-  assert.match(spill.message, /8\.1 GB of 16 GB GPU memory is free\. big-9b needs about 9\.7 GB/);
+  assert.strictEqual(spill.message, 'big-9b is larger than your free GPU memory, so it may run slower.');
   assert.strictEqual(spill.alt.id, 'small-4b');
-  const tight = fitAdvice(models[1], gpu, models);
-  assert.strictEqual(tight.kind, 'tight');
-  assert.match(tight.message, /limited to 10k tokens/);
-  assert.strictEqual(fitAdvice(models[2], gpu, models), null);
+  // Fits in free memory, even with a tight context or a cautious estimate of 0: no prompt.
+  assert.strictEqual(fitAdvice(models[1], gpu, models), null);
+  assert.strictEqual(fitAdvice({ id: 'x', sizeBytes: 7 * GB, reportContext: 0 }, gpu, models), null);
   assert.strictEqual(fitAdvice({ ...models[0], state: 'loaded' }, gpu, models), null);
   assert.strictEqual(fitAdvice(models[0], null, models), null, 'no NVIDIA card: nothing to measure, no prompt');
-  assert.strictEqual(fitAdvice({ id: 'u', reportContext: null }, gpu, models), null);
+  assert.strictEqual(fitAdvice({ id: 'u' }, gpu, models), null, 'unknown size: no prompt');
 });
 
 test('startEngine runs `lms server start` when LM Studio is down, then waits for it', async () => {

@@ -251,14 +251,11 @@ async function resolveLocal(cfg, signal, { ask = true } = {}) {
   for (;;) {
     const advice = ask ? fitAdvice(chosen, state.gpu, state.models) : null;
     if (!advice) break;
-    const go = advice.kind === 'spill' ? 'Load anyway' : 'Continue';
     const use = advice.alt ? `Use ${advice.alt.id}` : null;
-    const choice = await vscode.window.showWarningMessage(advice.message, { modal: true }, ...[go, use, 'Recheck'].filter(Boolean));
-    if (choice === go) break;
+    const choice = await vscode.window.showInformationMessage(advice.message, { modal: true }, ...['Continue', use].filter(Boolean));
+    if (choice === 'Continue') break;
     if (choice === use) { chosen = advice.alt; continue; }
-    if (choice !== 'Recheck') throw new Error('cancelled');
-    state = await inspectLocal(cfg, false, signal, true);
-    chosen = pickModel(state.models, chosen.id) || chosen;
+    throw new Error('cancelled');
   }
   // Model details (reasoning, native endpoint) were read for the configured model only; read them for the one chosen.
   if (cfg.engine === 'ollama' && chosen.id !== cfg.model) chosen = { ...chosen, ...(await modelInfo({ engine: 'ollama', model: chosen.id }))[0] };
