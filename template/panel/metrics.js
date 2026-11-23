@@ -165,21 +165,10 @@ cs tab. Ported in structure from claude-control (MIT, lucasdonordeste). */
     return color;
   }
 
-  function render(D, state) {
-    D = D || {}; state = state || {};
-    var all = Array.isArray(D.projects) ? D.projects.filter(Boolean).map(function (p) {
-      return { name: String(p.name == null ? '' : p.name), t: p.t || {}, daily: p.daily || {}, dailyTurns: p.dailyTurns || {},
-        tools: p.tools || {}, models: p.models || {}, hours: p.hours || [], cache: p.cache || {} };
-    }) : [];
-    var color = colors(all.map(function (p) { return p.name; }));
-    var open = D.openProject != null && D.openProject !== '' ? D.openProject : null;
-    var openOnly = !!state.openOnly && open != null;
-    var ps = openOnly ? all.filter(function (p) { return p.name === open; }) : all;
-    var days = Array.isArray(D.days) ? D.days : [];
-    var h = '';
-    var i;
-
-    // Trend
+  // Plan gauges, burn rate and trend. They need only the live reading and its history, so the sidebar
+  // draws them before the transcript scan behind the rest of the page has finished.
+  function renderPlan(D) {
+    D = D || {};
     var now = Number.isFinite(D.now) ? D.now : Date.now();
     var hist = Array.isArray(D.history) ? D.history.filter(function (p) { return p && Number.isFinite(p.t) && p.t <= now; }) : [];
     hist.sort(function (a, b) { return a.t - b.t; });
@@ -195,10 +184,23 @@ cs tab. Ported in structure from claude-control (MIT, lucasdonordeste). */
       return '<div class="sparkrow"><div class="sparklbl"><span>' + esc(spec.trend) + '</span>' + reading + '</div>' +
         (svg ? svg + '<div class="spark-axis"><span>' + esc(spec.start) + '</span><span>Now</span></div>' : '<div class="spark-empty">No readings in this period</div>') + '</div>';
     };
-    if (D.showUsageTrend !== false) {
-      var control = hist.some(function (p) { return p.t >= now - 7 * 24 * HOUR && (p.sSource === 'control' || p.wSource === 'control'); });
-      h += planUsage(D.live || {}, hist, now) + scope('Trend', control ? 'Includes Claude Control' : 'Claude plan') + PLAN.map(block).join('');
-    }
+    var control = hist.some(function (p) { return p.t >= now - 7 * 24 * HOUR && (p.sSource === 'control' || p.wSource === 'control'); });
+    return planUsage(D.live || {}, hist, now) + scope('Trend', control ? 'Includes Claude Control' : 'Claude plan') + PLAN.map(block).join('');
+  }
+
+  function render(D, state) {
+    D = D || {}; state = state || {};
+    var all = Array.isArray(D.projects) ? D.projects.filter(Boolean).map(function (p) {
+      return { name: String(p.name == null ? '' : p.name), t: p.t || {}, daily: p.daily || {}, dailyTurns: p.dailyTurns || {},
+        tools: p.tools || {}, models: p.models || {}, hours: p.hours || [], cache: p.cache || {} };
+    }) : [];
+    var color = colors(all.map(function (p) { return p.name; }));
+    var open = D.openProject != null && D.openProject !== '' ? D.openProject : null;
+    var openOnly = !!state.openOnly && open != null;
+    var ps = openOnly ? all.filter(function (p) { return p.name === open; }) : all;
+    var days = Array.isArray(D.days) ? D.days : [];
+    var h = D.showUsageTrend !== false ? renderPlan(D) : '';
+    var i;
 
     // Tokens header and switch
     h += scope('Tokens', 'last ' + (num(D.windowDays) || days.length || 30) + ' days');
@@ -304,5 +306,5 @@ cs tab. Ported in structure from claude-control (MIT, lucasdonordeste). */
     });
   }
 
-  window.ClaudeReportMetrics = { render: render, bind: bind };
+  window.ClaudeReportMetrics = { render: render, renderPlan: renderPlan, bind: bind };
 })(window);

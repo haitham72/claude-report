@@ -35,6 +35,14 @@ test('renders every section label and the footnote', () => {
   assert.ok(html.includes('>search<') && !html.includes('mcp__'));
 });
 
+test('renderPlan draws the plan section alone, the same as at the top of the full page', () => {
+  const plan = M.renderPlan({ live: null, history: hist, now: hist.at(-1).t });
+  ['Plan usage', 'Burn rate', 'Trend', '5-hour limit'].forEach((s) => assert.ok(plan.includes(s), s));
+  assert.ok(!plan.includes('Tokens'));
+  assert.ok(M.render(D, { openOnly: false }).startsWith(plan));
+  assert.ok(!M.render({ ...D, showUsageTrend: false }).includes('Plan usage'));
+});
+
 test('openOnly drops the other project', () => {
   const all = M.render(D, { openOnly: false });
   const one = M.render(D, { openOnly: true });

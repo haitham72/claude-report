@@ -5,6 +5,7 @@ All notable changes are listed here, newest first.
 ## 0.12.4
 
 - Plan usage no longer loses newer status-line readings: reading an older shared usage file kept only readings up to that file's time, deleting newer points from the Metrics history and replacing the newer saved window. Login expiry is read in milliseconds, as Claude Code writes it, so an expired login is recognised before a request is sent. The sidebar no longer falls back to older plan numbers when the API answers before its scan finishes, and it builds its state once per refresh instead of twice.
+- The sidebar loads faster, following Claude Control: the plan gauges, burn rate and trend appear as soon as the sidebar opens instead of waiting for the 30-day transcript scan, and the last scan is kept in `~/.claude-report/scan-cache.json`, so after a restart Metrics and the Report project list show at once while a new scan runs. The Metrics banner asking to connect Claude Code appears only when there is no plan reading at all, since the gauges no longer need the hook.
 
 ## 0.12.3
 

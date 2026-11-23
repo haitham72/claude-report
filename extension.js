@@ -145,6 +145,27 @@ function currentLive() {
   return mergeLive({ hook: readLive({ cwd, dir: HOME_DIR, sharedFile: SHARED_USAGE }), transcript: readTranscriptLive({ cwd }) });
 }
 
+// The last finished scan, kept on disk so that after a restart the Metrics and Report tabs show it at
+// once and the new scan replaces it a moment later (Claude Control keeps metrics-cache.json for the
+// same reason). It holds project names, folders, counts and token totals: no prompts.
+const SCAN_CACHE_MAX_AGE_MS = 48 * 3600 * 1000;
+const scanCacheFile = () => path.join(HOME_DIR, 'scan-cache.json');
+
+function readScanCache(now = Date.now()) {
+  try {
+    const j = JSON.parse(fs.readFileSync(scanCacheFile(), 'utf8'));
+    if (j && j.version === 1 && now - j.savedAt < SCAN_CACHE_MAX_AGE_MS && j.scan && j.scan.metrics) return j.scan;
+  } catch { /* none yet or unreadable: the first scan writes it */ }
+  return null;
+}
+
+function saveScanCache(scan) {
+  try {
+    fs.mkdirSync(HOME_DIR, { recursive: true });
+    writeFileAtomic(scanCacheFile(), JSON.stringify({ version: 1, savedAt: Date.now(), scan }));
+  } catch (e) { log(`scan cache: ${e && e.message}`); }
+}
+
 // The sidebar's live gauges and plan trend: part of every state post, and posted again alone when an API answer lands.
 function planState() {
   return {
@@ -494,7 +515,8 @@ class Panel {
     this.view = null;
     this.stateRequest = 0;
     this.localRequest = 0;
-    this.lastScan = null;
+    this.lastScan = readScanCache();
+    this.savedScans = null; // the scan results last written to scan-cache.json
     this.lastState = null; // the newest full state posted, so a late plan answer can be posted on top of it
     this.reportProgress = [];
     this.reportManager = createReportManager({
@@ -605,6 +627,7 @@ class Panel {
         depth: metadata?.deepPlan ? 'Deep' : undefined
       })),
       archivedReportCount: history.filter((r) => r.archived).length,
+      planSources: SOURCES.filter((s) => s.plan).map((s) => s.id),
       ...planState()
     };
   }
@@ -641,12 +664,14 @@ class Panel {
     if (this.lastScan?.monthLabel === base.monthLabel) Object.assign(base, this.lastScan);
     this.lastState = { ...base };
     this.post({ type: 'state', d: this.lastState });
+    let scanned = null;
     try {
       const dateRange = base.export.dateRange;
       const month = dateRange ? dateRange.to.slice(0, 7) : monthKey();
       const key = dateRange ? `range:${dateRange.from}/${dateRange.to}` : `month:${month}`;
       const maxAge = force ? 0 : SCAN_MAX_AGE_MS;
       const [scan, monthScan] = await Promise.all([getScan('days', maxAge), getScan(key, maxAge, { month, dateRange })]);
+      scanned = [scan, monthScan];
       base.reportProjects = labelProjects(monthScan.projects).filter((p) => p.promptCount > 0)
         .map((p) => ({ id: p.id, name: p.name, hint: p.name === p.baseName ? undefined : p.location,
           prompts: p.promptCount, tokens: p.totalTokens, eligible: p.promptCount >= MIN_PROMPTS }));
@@ -675,6 +700,11 @@ class Panel {
     if (request !== this.stateRequest) return;
     if (freshPlan) Object.assign(base, freshPlan);
     this.lastScan = { monthLabel: base.monthLabel, metrics: base.metrics, metricSources: base.metricSources, defaultSource: base.defaultSource, reportProjects: base.reportProjects };
+    // Scans are reused for two minutes, so most pushes bring nothing new to save.
+    if (scanned && base.metrics && !(this.savedScans && scanned.every((s, i) => s === this.savedScans[i]))) {
+      this.savedScans = scanned;
+      saveScanCache(this.lastScan);
+    }
     this.lastState = base;
     this.post({ type: 'state', d: base });
   }

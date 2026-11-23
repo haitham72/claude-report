@@ -227,14 +227,24 @@ html, body { margin: 0; padding: 0; font-family: var(--vscode-font-family); font
       }).join('') + '</div>';
   }
 
+  // The plan section needs only d.live and d.planHistory, which every post carries, so it is drawn at
+  // once; the 30-day activity below it waits for the transcript scan. Before the first scan there are
+  // no source tabs, so the plan shows unless the user's saved pick is a source without one.
   function metricsPage() {
     var d = S.d;
-    if (!d || !d.metrics) return d && d.error ? '<div class="cp-note">' + esc(d.error) + '</div>' : splash('Reading 30 days of usage…');
+    if (!d) return splash('Reading 30 days of usage…');
     var selected = sourceSelection();
     var source = (d.metricSources || []).find(function (item) { return item.id === selected; });
-    var planTab = selected === 'all' || !!(source && source.plan);
-    var lead = d.connected === false && planTab
-      ? '<div class="cp-lead"><span>Plan usage needs Claude Code connected.</span><button data-tab="connect">Connect</button></div>' : '';
+    var planTab = d.metrics ? selected === 'all' || !!(source && source.plan)
+      : !S.metricSource || S.metricSource === 'all' || (d.planSources || []).indexOf(S.metricSource) >= 0;
+    var reading = d.live && (d.live.fiveHour || d.live.sevenDay);
+    var lead = d.connected === false && planTab && !reading
+      ? '<div class="cp-lead"><span>No plan reading yet. Sign in to Claude Code, or connect its status line.</span><button data-tab="connect">Connect</button></div>' : '';
+    if (!d.metrics) {
+      var rest = d.error ? '<div class="cp-note">' + esc(d.error) + '</div>' : '<div class="spark-empty">Reading 30 days of usage…</div>';
+      if (!planTab) return d.error ? rest : splash('Reading 30 days of usage…');
+      return lead + window.ClaudeReportMetrics.renderPlan({ live: d.live, history: d.planHistory }) + rest;
+    }
     var metrics = source ? source.metrics : d.metrics;
     var plan = planTab && metrics.showUsageTrend !== false;
     return lead + window.ClaudeReportMetrics.render(Object.assign({}, metrics, {

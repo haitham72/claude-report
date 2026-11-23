@@ -223,14 +223,10 @@ test('the sidebar Manage action edits, compares, and enhances a selected saved p
   assert.equal(posts.filter(({ type }) => type === 'state').at(-1).d.export.dateRange, null);
 });
 
-test('the sidebar posts at once and keeps a late plan-usage answer in every later post', async (t) => {
-  const home = fs.mkdtempSync(path.join(os.tmpdir(), 'report-host-plan-'));
+// Opens the sidebar on a host whose scan workers answer only once openScan() is called.
+function openSidebar(t, overrides = {}) {
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), 'report-host-side-'));
   t.after(() => fs.rmSync(home, { recursive: true }));
-  const reading = (pct) => ({ fiveHour: { pct, resetsAt: null, seenAt: Date.now() }, sevenDay: null, updatedAt: Date.now(), stale: true });
-  let live = reading(10);
-  const pending = [];
-  // The API answers: the files now hold the new reading, and every waiting getUsage caller hears oauth-api.
-  const answer = (pct) => { live = reading(pct); pending.splice(0).forEach((cb) => cb(null, 'ok', { route: 'oauth-api' })); };
   let openScan;
   const scanHeld = new Promise((resolve) => { openScan = resolve; });
   let provider, receive, disposeView;
@@ -242,21 +238,39 @@ test('the sidebar posts at once and keeps a late plan-usage answer in every late
     StatusBarAlignment: { Left: 1, Right: 2 },
     ThemeColor: class {}
   };
-  const host = loadHost(vscode, home, async () => '', undefined, {
+  const start = () => {
+    const host = loadHost(vscode, home, async () => '', undefined, {
+      worker_threads: { Worker: class extends EventEmitter {
+        constructor() { super(); scanHeld.then(() => this.emit('message', { projects: [] })); }
+      } },
+      ...overrides,
+    });
+    host.activate({ subscriptions: [] });
+    provider.resolveWebviewView({
+      webview: { onDidReceiveMessage(fn) { receive = fn; }, postMessage: (message) => posts.push(message) },
+      onDidChangeVisibility() {}, onDidDispose(fn) { disposeView = fn; }
+    });
+    t.after(() => { disposeView(); host.deactivate(); });
+  };
+  return {
+    home, start, openScan,
+    receive: (message) => receive(message),
+    states: () => posts.filter(({ type }) => type === 'state').map(({ d }) => d),
+    tick: () => new Promise(setImmediate),
+  };
+}
+
+test('the sidebar posts at once and keeps a late plan-usage answer in every later post', async (t) => {
+  const reading = (pct) => ({ fiveHour: { pct, resetsAt: null, seenAt: Date.now() }, sevenDay: null, updatedAt: Date.now(), stale: true });
+  let live = reading(10);
+  const pending = [];
+  // The API answers: the files now hold the new reading, and every waiting getUsage caller hears oauth-api.
+  const answer = (pct) => { live = reading(pct); pending.splice(0).forEach((cb) => cb(null, 'ok', { route: 'oauth-api' })); };
+  const { start, openScan, receive, states, tick } = openSidebar(t, {
     './src/live': { readLive: () => live, readHistory: () => [] },
     './src/plan-usage': { getUsage: (cb) => { pending.push(cb); }, lastUsageRoute: () => 'none' },
-    worker_threads: { Worker: class extends EventEmitter {
-      constructor() { super(); scanHeld.then(() => this.emit('message', { projects: [] })); }
-    } },
   });
-  host.activate({ subscriptions: [] });
-  provider.resolveWebviewView({
-    webview: { onDidReceiveMessage(fn) { receive = fn; }, postMessage: (message) => posts.push(message) },
-    onDidChangeVisibility() {}, onDidDispose(fn) { disposeView = fn; }
-  });
-  t.after(() => { disposeView(); host.deactivate(); });
-  const states = () => posts.filter(({ type }) => type === 'state').map(({ d }) => d);
-  const tick = () => new Promise(setImmediate);
+  start();
 
   // The scan is held, so the API answers while this push still waits for it.
   const first = receive({ cmd: 'ready' });
@@ -279,4 +293,46 @@ test('the sidebar posts at once and keeps a late plan-usage answer in every late
   assert.equal(states().length, finished + 1);
   assert.equal(states().at(-1).live.fiveHour.pct, 77);
   assert.deepEqual(states().at(-1).reportProjects, [], 'the scan results stay');
+});
+
+test('after a restart the sidebar shows the last scan at once, then the new one, and saves it once', async (t) => {
+  const side = openSidebar(t);
+  const file = path.join(side.home, 'scan-cache.json');
+  const monthLabel = new Date().toLocaleString('en-GB', { month: 'long', year: 'numeric' });
+  const reportProjects = [{ id: 'cached', name: 'from-cache', prompts: 3, tokens: 9, eligible: true }];
+  const cached = { monthLabel, metrics: { days: [], projects: [{ name: 'from-cache' }] }, metricSources: [], defaultSource: 'claude', reportProjects };
+  fs.writeFileSync(file, JSON.stringify({ version: 1, savedAt: Date.now(), scan: cached }));
+  side.start();
+
+  // The scan is held: the first post already carries the saved Metrics and project list.
+  const first = side.receive({ cmd: 'ready' });
+  await side.tick();
+  assert.equal(side.states().length, 1);
+  assert.equal(side.states()[0].metrics.projects[0].name, 'from-cache');
+  assert.deepEqual(side.states()[0].reportProjects, reportProjects);
+  side.openScan();
+  await first;
+  assert.deepEqual(side.states().at(-1).reportProjects, [], 'the new scan replaces the saved one');
+  const saved = JSON.parse(fs.readFileSync(file, 'utf8'));
+  assert.equal(saved.scan.monthLabel, monthLabel);
+  assert.deepEqual(saved.scan.reportProjects, []);
+  assert.deepEqual(saved.scan.metrics.projects, []);
+
+  // The next push reuses the same scan, so the file is not written again.
+  const written = fs.statSync(file).mtimeMs;
+  await side.receive({ cmd: 'ready' });
+  assert.equal(fs.statSync(file).mtimeMs, written);
+});
+
+test('a scan cache older than two days is ignored', async (t) => {
+  const side = openSidebar(t);
+  const monthLabel = new Date().toLocaleString('en-GB', { month: 'long', year: 'numeric' });
+  fs.writeFileSync(path.join(side.home, 'scan-cache.json'), JSON.stringify({ version: 1, savedAt: Date.now() - 3 * 86400e3,
+    scan: { monthLabel, metrics: { days: [], projects: [{ name: 'old' }] }, reportProjects: [] } }));
+  side.start();
+  const first = side.receive({ cmd: 'ready' });
+  await side.tick();
+  assert.equal(side.states()[0].metrics, undefined);
+  side.openScan();
+  await first;
 });

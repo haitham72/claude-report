@@ -65,12 +65,34 @@ test('the shell asks the host for state, then draws four tabs and the Metrics pa
   assert.ok(!/cat|pet/i.test(s.app.innerHTML.replace(/metric|category|indicate/gi, '')), 'no pet or category');
 });
 
-test('not connected shows a dot on Connect and a way to connect on Metrics', () => {
+test('not connected with no plan reading shows a dot on Connect and a way to get one on Metrics', () => {
   const s = boot();
   s.msg({ type: 'state', d: { ...state, connected: false } });
   s.click({ tab: 'metrics' });
   assert.ok(s.app.innerHTML.includes('tabdot'));
-  assert.ok(s.app.innerHTML.includes('Plan usage needs Claude Code connected'));
+  assert.ok(s.app.innerHTML.includes('No plan reading yet'));
+  // A reading from the login poll means the hook is optional, so Metrics does not ask for it.
+  s.msg({ type: 'state', d: { ...state, connected: false, live: { fiveHour: { pct: 30, resetsAt: null }, sevenDay: null } } });
+  assert.doesNotMatch(s.app.innerHTML, /No plan reading yet/);
+});
+
+test('Metrics draws the plan gauges before the 30-day scan arrives', () => {
+  const live = { fiveHour: { pct: 37, resetsAt: Math.round(Date.now() / 1000) + 3600, seenAt: Date.now() }, sevenDay: null };
+  const early = { ...state, metrics: undefined, live, planHistory: [], planSources: ['claude'] };
+  const s = boot();
+  s.msg({ type: 'state', d: early });
+  s.click({ tab: 'metrics' });
+  assert.match(s.app.innerHTML, /Plan usage[\s\S]*37%/);
+  assert.match(s.app.innerHTML, /Reading 30 days of usage/);
+  assert.doesNotMatch(s.app.innerHTML, /class="splash"/);
+  s.msg({ type: 'state', d: { ...state, live, planHistory: [] } });
+  assert.match(s.app.innerHTML, /Plan usage[\s\S]*37%[\s\S]*Tokens/);
+
+  // A saved pick of a source without plan limits keeps the splash until its numbers arrive.
+  const codex = boot({ tab: 'metrics', metricSource: 'codex' });
+  codex.msg({ type: 'state', d: early });
+  assert.match(codex.app.innerHTML, /class="splash"/);
+  assert.doesNotMatch(codex.app.innerHTML, /Plan usage/);
 });
 
 test('Report tab lists each project with its live status', () => {
