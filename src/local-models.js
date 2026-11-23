@@ -207,13 +207,71 @@ function findGguf(fsImpl, dirs, id, quant) {
   return best;
 }
 
-async function lmsList(exec) {
+// LM Studio's CLI, in the places its installer puts it, then PATH.
+function lmsCandidates() {
   const home = os.homedir();
   const exe = process.platform === 'win32' ? 'lms.exe' : 'lms';
-  for (const cmd of [path.join(home, '.cache', 'lm-studio', 'bin', exe), path.join(home, '.lmstudio', 'bin', exe), 'lms']) {
+  return [path.join(home, '.cache', 'lm-studio', 'bin', exe), path.join(home, '.lmstudio', 'bin', exe), 'lms'];
+}
+
+async function lmsList(exec) {
+  for (const cmd of lmsCandidates()) {
     try { const j = JSON.parse(await exec(cmd, ['ls', '--json'])); if (Array.isArray(j)) return j; } catch { /* next */ }
   }
   return [];
+}
+
+// The LM Studio desktop app. `lms server start` only works once its background service runs,
+// and on some installs only launching the app brings that service up.
+function lmStudioApp(fsImpl = fs) {
+  const exists = (p) => { try { return fsImpl.statSync(p).isFile() || fsImpl.statSync(p).isDirectory(); } catch { return false; } };
+  const candidates = process.platform === 'win32'
+    ? [path.join(process.env.LOCALAPPDATA || '', 'Programs', 'LM Studio', 'LM Studio.exe'), path.join(process.env.ProgramFiles || 'C:\Program Files', 'LM Studio', 'LM Studio.exe')]
+    : process.platform === 'darwin' ? ['/Applications/LM Studio.app'] : [];
+  return candidates.find(exists) || null;
+}
+
+// Starts the engine's local server when it is not answering, then waits until it does.
+// LM Studio: `lms server start`; if the service does not wake, open the app and ask again.
+// Ollama: `ollama serve`, detached so it outlives the editor's worker.
+async function startEngine(engine, { exec = defaultRun, spawn = cp.spawn, fetchImpl = globalThis.fetch, fsImpl = fs, waitMs = 45000, pollMs = 1000 } = {}) {
+  const e = ENGINES[engine];
+  if (!e) return false;
+  const up = async () => { try { await getJson(fetchImpl, e.baseUrl + e.probe, 1500); return true; } catch { return false; } };
+  const waitUp = async (ms) => {
+    for (const end = Date.now() + ms; Date.now() < end;) {
+      if (await up()) return true;
+      await new Promise((r) => setTimeout(r, pollMs));
+    }
+    return up();
+  };
+  const detached = (cmd, args) => {
+    try {
+      const child = spawn(cmd, args, { detached: true, stdio: 'ignore', windowsHide: engine !== 'lmstudio' });
+      child.on?.('error', () => {});
+      child.unref?.();
+      return true;
+    } catch { return false; }
+  };
+  if (await up()) return true;
+  if (engine === 'ollama') return detached('ollama', ['serve']) && waitUp(waitMs);
+
+  const serverStart = async (timeout) => {
+    for (const cmd of lmsCandidates()) {
+      try { await exec(cmd, ['server', 'start'], timeout); return true; } catch { /* next, or it timed out waiting for the service */ }
+    }
+    return false;
+  };
+  const quick = Math.min(15000, waitMs);
+  if (await serverStart(quick) && await waitUp(Math.min(5000, waitMs))) return true;
+  const app = lmStudioApp(fsImpl);
+  if (!app) return false;
+  const opened = process.platform === 'darwin' ? detached('open', ['-a', app]) : detached(app, []);
+  if (!opened) return false;
+  await waitUp(Math.min(8000, waitMs)); // the app may start the server itself
+  if (await up()) return true;
+  await serverStart(waitMs);
+  return waitUp(waitMs);
 }
 
 const loadedFirstBySize = (a, b) =>
@@ -302,4 +360,4 @@ async function listOllama({ baseUrl, fetchImpl, gpu, timeoutMs }) {
   }));
 }
 
-module.exports = { gpuInfo, readGgufMeta, kvBytesPerToken, maxContextOnGpu, detectEngines, listModels, formatTokens };
+module.exports = { gpuInfo, readGgufMeta, kvBytesPerToken, maxContextOnGpu, detectEngines, listModels, formatTokens, startEngine };

@@ -46,8 +46,18 @@ test('local model loads use the budgeted context and reuse the context of a load
   assert.equal(loaded.context, 8192);
   await loaded({ kind: 'project', prompt: 'fixture' });
   assert.equal(calls[1].model, 'existing');
-  await assert.rejects(prepareLocal({ ...target, reportContext: 0 }, { fetchImpl }), /90% GPU memory budget/);
-  assert.equal(calls.length, 2);
+  // Weights larger than free GPU memory: load anyway at the default context; the server offloads to RAM.
+  const spill = await prepareLocal({ ...target, reportContext: 0 }, { fetchImpl });
+  assert.equal(spill.context, 8192);
+  assert.equal(calls[2].context_length, 8192);
+});
+
+test('a load that runs out of memory names models that fit instead of a bare error', async () => {
+  const fetchImpl = async (url) => url.endsWith('/load')
+    ? { ok: false, status: 500, json: async () => ({ error: 'insufficient system resources to load model' }) }
+    : { ok: true, json: async () => ({}) };
+  const target = { engine: 'lmstudio', model: 'big-9b', native: true, reasoning: [], reportContext: 0, alternatives: ['big-9b', 'small-4b'] };
+  await assert.rejects(prepareLocal(target, { fetchImpl }), (e) => /could not load big-9b/.test(e.message) && /small-4b/.test(e.message) && !/fits now: big-9b/.test(e.message));
 });
 
 test('Local shrinks a prompt on invalid output and shows cause for persistent failure', async () => {

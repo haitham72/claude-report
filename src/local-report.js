@@ -23,7 +23,7 @@ async function json(base, route, body, timeoutMs = 5000, fetchImpl = globalThis.
     // Server errors can echo prompts. Retain only the category and HTTP status.
     const detail = JSON.stringify(data.error || '');
     const reason = /context.{0,30}(?:limit|exceed|window)|too (?:many|long).*tokens/i.test(detail) ? 'context limit'
-      : /out of memory|vram|insufficient memory/i.test(detail) ? 'insufficient memory'
+      : /out of memory|vram|insufficient (?:memory|system resources)|guardrail/i.test(detail) ? 'insufficient memory'
         : /reasoning|thinking/i.test(detail) ? 'thinking setting rejected'
           : /busy|queue|loading/i.test(detail) ? 'model busy or loading' : '';
     throw new Error('Local server HTTP ' + response.status + (reason ? ' (' + reason + ')' : ''));
@@ -102,20 +102,32 @@ async function prepareLocal(target, { fetchImpl = globalThis.fetch, signal } = {
   let instance = target.instanceId || model;
   let context = target.loadedContext;
   if (!context && !target.instanceId && target.state !== 'loaded') {
-    if (target.reportContext === 0) throw new Error('This model would exceed the 90% GPU memory budget. Free GPU memory or choose a smaller model.');
+    // reportContext 0 means the weights do not fit in the GPU memory free right now. That is not a
+    // reason to refuse: the server can keep part of the model in system memory (slower, still works).
+    // Load at the default context and let the server decide; a real failure is reported below.
     context = target.reportContext || (engine === 'lmstudio' && native ? Math.min(target.maxContext || DEFAULT_CONTEXT, DEFAULT_CONTEXT) : undefined);
   }
+  const memoryHint = () => {
+    const fits = (target.alternatives || []).filter((id) => id !== model);
+    return ' Free GPU memory' + (fits.length ? ', or pick a model that fits now: ' + fits.slice(0, 3).join(', ') : ', or pick a smaller model') + '.';
+  };
   if (engine === 'lmstudio' && native && !target.instanceId) {
     const load = () => json(base, '/api/v1/models/load', {
       model, context_length: context, flash_attention: true
     }, 120000, fetchImpl, signal);
     let loaded;
+    const memoryError = (error) => /insufficient|memory|out of memory|oom|guardrail|resources/i.test(error.message);
     try {
-      loaded = await load();
+      try {
+        loaded = await load();
+      } catch (error) {
+        if (!(context > DEFAULT_CONTEXT) || !/insufficient memory|context limit/.test(error.message)) throw error;
+        context = DEFAULT_CONTEXT;
+        loaded = await load();
+      }
     } catch (error) {
-      if (!(context > DEFAULT_CONTEXT) || !/insufficient memory|context limit/.test(error.message)) throw error;
-      context = DEFAULT_CONTEXT;
-      loaded = await load();
+      if (memoryError(error)) throw new Error('LM Studio could not load ' + model + ': ' + error.message + '.' + memoryHint());
+      throw error;
     }
     if (loaded.status !== 'loaded' || !loaded.instance_id) throw new Error('LM Studio did not finish loading the model');
     instance = loaded.instance_id;

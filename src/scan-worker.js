@@ -3,16 +3,25 @@
 const { parentPort, workerData } = require('worker_threads');
 const { scanPeriod, lastDaysRange } = require('./scan');
 const { scanCodex, mergeProjects } = require('./codex-activity');
+const { scanAntigravity } = require('./antigravity-activity');
+const { scanCursor } = require('./cursor-activity');
 const { reportBounds } = require('./report-window');
 
 function scanActivity({ month, days, cutoff, deep, dateRange }) {
   const { from, to } = days ? lastDaysRange(days) : reportBounds(month, dateRange, cutoff);
   const options = { identifyProjects: Boolean(month), deep };
   const claude = scanPeriod(from, to, options);
-  const codex = scanCodex(from, to, undefined, options);
+  // Each extra source is optional: a missing store or runtime yields [] and no tab.
+  const extra = {
+    codex: scanCodex(from, to, undefined, options),
+    antigravity: scanAntigravity(from, to, undefined, options),
+    cursor: scanCursor(from, to, undefined, options)
+  };
+  const present = Object.fromEntries(Object.entries(extra).filter(([, projects]) => projects.length));
+  const others = Object.values(present);
   return {
-    month, days, projects: codex.length ? mergeProjects(claude, codex) : claude,
-    sources: { claude, ...(codex.length ? { codex } : {}) }
+    month, days, projects: others.length ? mergeProjects(claude, ...others) : claude,
+    sources: { claude, ...present }
   };
 }
 

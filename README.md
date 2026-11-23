@@ -1,4 +1,4 @@
-﻿<p align="center"><img src="media/marketplace/cover.png" alt="Claude Report: usage, prompting advice and reports for Claude Code and Codex"></p>
+﻿<p align="center"><img src="media/marketplace/cover.png" alt="Claude Report: usage, prompting advice and reports for Claude Code, Codex, Antigravity and Cursor"></p>
 
 <p align="center">
   <a href="https://marketplace.visualstudio.com/items?itemName=haitham72.claude-report"><img src="https://img.shields.io/visual-studio-marketplace/v/haitham72.claude-report?label=VS%20Code%20Marketplace" alt="Marketplace version"></a>
@@ -6,7 +6,7 @@
   <a href="https://github.com/haitham72/claude-report/blob/main/LICENSE"><img src="https://img.shields.io/badge/license-MIT-blue" alt="MIT license"></a>
 </p>
 
-Claude Report shows your Claude Code and Codex usage inside your editor, and turns a month of sessions into a report: what you shipped, how you prompt, and the commits behind it. It works in VS Code, Cursor, Windsurf, Antigravity and other Open VSX editors.
+Claude Report shows your Claude Code, Codex, Antigravity and Cursor usage inside your editor, and turns a month of sessions into a report: what you shipped, how you prompt, and the commits behind it. It works in VS Code, Cursor, Windsurf, Antigravity and other Open VSX editors.
 
 <p align="center"><img src="media/marketplace/report.gif" alt="A report scrolling from totals and overview to a project's examples with time saved, then to prompting advice"></p>
 
@@ -22,9 +22,20 @@ Claude Report shows your Claude Code and Codex usage inside your editor, and tur
 
 - **Sessions:** browse your Claude Code history and resume any session in its own folder.
 - **Status bar:** model and context at a glance, plus plan gauges once connected.
-- **Cloud or local:** write reports with your Claude Code sign-in, or keep them on your machine with LM Studio or Ollama.
+- **Cloud or local:** write reports with your Claude Code sign-in, or keep them on your machine with LM Studio or Ollama. The extension starts the local server and picks a model that fits your GPU.
 - **Export:** save reports as HTML or PDF.
 - **Private:** reads local transcripts, redacts common secrets, no telemetry.
+
+## Supported agents
+
+| Agent | What is read | Tokens |
+| --- | --- | --- |
+| Claude Code | Local transcripts | Yes |
+| Codex | Local session rollouts | Yes |
+| Antigravity | Conversation index (read-only) | No |
+| Cursor | Chat state database (read-only) | Only when Cursor records them |
+
+Antigravity and Cursor need SQLite support: the editor's built-in `node:sqlite`, or `node` 22.13+ or 24 on your PATH. Devin (cloud sessions, no local transcripts) and Windsurf (encrypted history) are not supported.
 
 ## Get started
 

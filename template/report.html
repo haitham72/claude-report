@@ -349,7 +349,7 @@ section.block{margin-top:18px}
       arr(rv.references).forEach(function (ref) { refs[ref.id] = ref; });
       var refLine = function (id) {
         var ref = refs[id];
-        return ref ? '<span class="ref">' + esc(id) + ' · ' + (ref.source === 'codex' ? 'Codex' : 'Claude Code') + ' · ' + esc(utc(ref.at)) + '</span>' : '';
+        return ref ? '<span class="ref">' + esc(id) + ' · ' + ({ codex: 'Codex', antigravity: 'Antigravity', cursor: 'Cursor' }[ref.source] || 'Claude Code') + ' · ' + esc(utc(ref.at)) + '</span>' : '';
       };
       // Findings carry the checked excerpt of the user's own words. Older reviews only have the observation text.
       var notes = function (label, items, plain) {
@@ -390,7 +390,7 @@ section.block{margin-top:18px}
   });
   html += '<section class="block" id="evidence"><div class="title"><h2>Evidence</h2></div><div class="rows">' + gitHtml.slice(0, LIMIT).join('') + '</div>' +
     (gitHtml.length > LIMIT ? '<details class="rest"><summary class="link card">Show ' + (gitHtml.length - LIMIT) + ' more repositories</summary><div class="rows">' + gitHtml.slice(LIMIT).join('') + '</div></details>' : '') + '<div class="card method" style="margin-top:8px"><b>How these numbers are counted</b><ul>' +
-    '<li>Tokens add input, output, cache reads and cache writes from Claude Code and Codex logs, so cache reads can dominate the total.</li>' +
+    '<li>Tokens add input, output, cache reads and cache writes from Claude Code and Codex logs, so cache reads can dominate the total. Antigravity and Cursor add prompts and turns; their logs carry no usable token counts.</li>' +
     '<li>Prompts are your own messages. Sessions started by an agent for a subtask are not counted as prompts.</li>' +
     '<li>A commit is a recorded change in a repository. It shows when the change was recorded, not that a prompt produced it.</li>' +
     '<li>Time saved is an estimate and appears only for examples with a recorded result. All times are UTC.</li></ul></div></section>';

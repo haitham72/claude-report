@@ -344,3 +344,41 @@ test('opening Connect while Local is already chosen asks the host to look', () =
   s.click({ tab: 'connect' });
   assert.strictEqual(s.sent[s.sent.length - 1].cmd, 'localScan');
 });
+
+test('Report tab shows a Cloud/Local seg with Cloud pressed by default', () => {
+  const s = boot();
+  s.msg({ type: 'state', d: { ...state, connected: true, localPrefs: { enabled: false } } });
+  s.click({ tab: 'report' });
+  const h = s.app.innerHTML;
+  assert.ok(/data-mode="cloud"[^>]*aria-pressed="true"/.test(h) && /data-mode="local"[^>]*aria-pressed="false"/.test(h));
+  assert.ok(h.includes('haiku · medium per project · sonnet · high overview'));
+  assert.ok(!h.includes('Choose model…'));
+});
+
+test('Report tab: choosing Local posts the mode and offers Choose model…', () => {
+  const s = boot();
+  s.msg({ type: 'state', d: { ...state, connected: true, localPrefs: { enabled: false } } });
+  s.click({ tab: 'report' });
+  s.click({ mode: 'local' });
+  assert.deepStrictEqual(s.sent[s.sent.length - 1], { cmd: 'localMode', mode: 'local' });
+  assert.ok(s.app.innerHTML.includes('Choose model…'));
+});
+
+test('Local with no model picked still allows Create and says the model is chosen automatically', () => {
+  const s = boot();
+  s.msg({ type: 'state', d: { ...state, connected: true, localPrefs: { enabled: true, model: '' }, reportProjects: [{ name: 'A', path: '/a', prompts: 3, eligible: true }] } });
+  s.click({ tab: 'report' });
+  const h = s.app.innerHTML;
+  assert.ok(h.includes('Auto: best model that fits'));
+  assert.ok(!/data-act="create" disabled/.test(h));
+});
+
+test('Choose model… opens Connect and asks the host to scan', () => {
+  const s = boot();
+  s.msg({ type: 'state', d: { ...state, connected: true, localPrefs: { enabled: false } } });
+  s.click({ tab: 'report' });
+  s.click({ mode: 'local' });
+  s.click({ tab: 'connect' });
+  assert.strictEqual(s.sent[s.sent.length - 1].cmd, 'localScan');
+  assert.ok(s.app.innerHTML.includes('Report model'));
+});

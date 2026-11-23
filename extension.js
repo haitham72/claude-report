@@ -7,6 +7,8 @@ const path = require('path');
 const { execFileSync, spawnSync } = require('child_process');
 const { Worker } = require('worker_threads');
 const { readLive, SHARED_USAGE } = require('./src/live');
+const { SOURCES, labelOf, productList } = require('./src/sources');
+const { detectHost, defaultSource } = require('./src/host');
 const { readPlanHistory } = require('./src/plan-history');
 const { planInstall, applyInstall, applyUninstall, installRuntime, migrateLegacy, isConnected, isWired } = require('./src/install');
 const { runClaude, MODELS, EFFORTS } = require('./src/claude');
@@ -22,6 +24,8 @@ const { mergeLive } = require('./src/live-merge');
 const { listSessions, ageLabel, groupOf, isUuid } = require('./src/sessions');
 const { resumeTarget } = require('./src/resume');
 const { prepareLocal, thinkingSetting } = require('./src/local-report');
+const { startEngine } = require('./src/local-models');
+const { pickModel, fitAdvice, fittingModels } = require('./src/local-fit');
 const { reportDir: storedReportDir, saveRun, loadRun, listReports, recordReportExport } = require('./src/report-store');
 const { createReportManager } = require('./src/report-management');
 const { editProject } = require('./src/report-editor');
@@ -209,14 +213,37 @@ async function inspectLocal(cfg, details, signal, fit = false) {
   return { ...cfg, ...result };
 }
 
-async function resolveLocal(cfg, signal) {
-  const state = await inspectLocal(cfg, false, signal, true);
-  if (!state.engines.some((item) => item.engine === cfg.engine && item.running)) {
-    throw new Error('Start ' + (cfg.engine === 'ollama' ? 'Ollama' : 'LM Studio') + ' or select Cloud in Connect.');
+const engineName = (engine) => (engine === 'ollama' ? 'Ollama' : 'LM Studio');
+const engineRunning = (state, engine) => state.engines.some((item) => item.engine === engine && item.running);
+
+// Starts the server when it is down, picks a model when none is chosen, and asks before loading a
+// model that does not fit the GPU memory free right now. Throws 'cancelled' when the user backs out.
+async function resolveLocal(cfg, signal, { ask = true } = {}) {
+  let state = await inspectLocal(cfg, false, signal, true);
+  if (!engineRunning(state, cfg.engine)) {
+    log(`starting ${engineName(cfg.engine)}`);
+    if (await startEngine(cfg.engine)) state = await inspectLocal(cfg, false, signal, true);
+    if (!engineRunning(state, cfg.engine)) {
+      throw new Error(`Could not start ${engineName(cfg.engine)}. Open it once, or select Cloud on the Report tab.`);
+    }
   }
-  const chosen = cfg.model ? state.models.find((m) => m.id === cfg.model || m.instanceId === cfg.model) : state.models.find((m) => m.state === 'loaded');
-  if (!chosen) throw new Error(cfg.model ? 'The selected model is unavailable on the local server.' : 'Load a model or pick one in Connect.');
-  return { ...cfg, ...chosen, model: chosen.id };
+  let chosen = pickModel(state.models, cfg.model);
+  if (!chosen) throw new Error(cfg.model ? 'The selected model is unavailable on the local server.' : `${engineName(cfg.engine)} has no models. Download one first.`);
+  if (!cfg.model) log(`no local model picked; using ${chosen.id}`);
+  for (;;) {
+    const advice = ask ? fitAdvice(chosen, state.gpu, state.models) : null;
+    if (!advice) break;
+    const go = advice.kind === 'spill' ? 'Load anyway' : 'Continue';
+    const use = advice.alt ? `Use ${advice.alt.id}` : null;
+    const choice = await vscode.window.showWarningMessage(advice.message, { modal: true }, ...[go, use, 'Recheck'].filter(Boolean));
+    if (choice === go) break;
+    if (choice === use) { chosen = advice.alt; continue; }
+    if (choice !== 'Recheck') throw new Error('cancelled');
+    state = await inspectLocal(cfg, false, signal, true);
+    chosen = pickModel(state.models, chosen.id) || chosen;
+  }
+  const alternatives = fittingModels(state.models).map((m) => m.id);
+  return { ...cfg, ...chosen, model: chosen.id, alternatives };
 }
 
 // --- sessions ---------------------------------------------------------------
@@ -529,7 +556,13 @@ class Panel {
     update({ ...empty, checking: cfg.enabled });
     if (!cfg.enabled) return;
     try {
-      update(await inspectLocal(cfg, true));
+      let state = await inspectLocal(cfg, true);
+      // Local is on but its server is down: start it rather than asking the user to.
+      if (!engineRunning(state, cfg.engine)) {
+        update({ ...state, checking: true, starting: engineName(cfg.engine) });
+        if (await startEngine(cfg.engine)) state = await inspectLocal(cfg, true);
+      }
+      update(state);
     } catch (error) {
       log('local models: ' + error.message);
       update({ ...empty, error: 'Could not check the local server.' });
@@ -557,20 +590,23 @@ class Panel {
         openProject: cwd ? projectNameOf(cwd) : null
       };
       base.metrics = buildMetricsData({ ...metrics, projects: scan.projects });
-      const names = { claude: 'Claude', codex: 'Codex' };
+      const plan = new Set(SOURCES.filter((s) => s.plan).map((s) => s.id));
       base.metricSources = Object.entries(scan.sources || {}).map(([id, projects]) => ({
-        id, label: names[id] || id,
+        id, label: labelOf(id), plan: plan.has(id),
         metrics: buildMetricsData({
           ...metrics, projects,
-          showUsageTrend: id === 'claude'
+          showUsageTrend: plan.has(id)
         })
       }));
+      // The tab opened first until the user picks one: the editor's own agent, else Claude.
+      base.defaultSource = defaultSource(detectHost(vscode.env && vscode.env.appName),
+        base.metricSources.map((s) => s.id), { claudeInstalled: claudeExtension() });
     } catch (e) {
       base.metrics = null;
       base.error = String(e.message);
     }
     if (request !== this.stateRequest) return;
-    this.lastScan = { monthLabel: base.monthLabel, metrics: base.metrics, metricSources: base.metricSources, reportProjects: base.reportProjects };
+    this.lastScan = { monthLabel: base.monthLabel, metrics: base.metrics, metricSources: base.metricSources, defaultSource: base.defaultSource, reportProjects: base.reportProjects };
     this.post({ type: 'state', d: base });
   }
 }
@@ -670,7 +706,8 @@ async function runReportTask(panel, operation, work) {
   try {
     await work(runtime);
   } catch (error) {
-    if (controller.signal.aborted) {
+    // 'cancelled': the user closed the GPU-memory prompt before a local load.
+    if (controller.signal.aborted || error.message === 'cancelled') {
       runtime.stage('cancelled', 'Report cancelled');
     } else {
       const message = scrubDeep(error.message || String(error));
@@ -793,7 +830,7 @@ async function writeReport(panel, keys, runtime, { dateRange, estimateTime, dept
   const settings = localConfig();
   const local = settings.enabled ? settings : null;
   const models = defaultModels();
-  const sources = eligible.some((p) => p.prompts.some((prompt) => prompt.source === 'codex')) ? 'Claude Code and Codex' : 'Claude Code';
+  const sources = productList(['claude', ...eligible.flatMap((p) => p.prompts.map((prompt) => prompt.source)).filter(Boolean)]);
   const route = local
     ? 'Project summaries and the overview run in ' + (local.engine === 'ollama' ? 'Ollama' : 'LM Studio') + ' on this computer.'
     : 'Claude Code uses ' + models.project.model + ' for project cards. ' + (depth === 'deep'

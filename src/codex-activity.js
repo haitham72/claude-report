@@ -174,4 +174,4 @@ function scanCodex(from, to, root = path.join(process.env.CODEX_HOME || path.joi
   return mergeProjects(readSessions(root, +from).flatMap((file) => activityFromSession(file, from, to, names, options)));
 }
 
-module.exports = { scanCodex, mergeProjects };
+module.exports = { scanCodex, mergeProjects, emptyProject };

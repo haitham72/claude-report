@@ -1,8 +1,8 @@
 {
   "name": "claude-report",
   "displayName": "Claude Report",
-  "description": "Claude Code and Codex usage in your editor: live plan gauges, a Metrics view, and monthly AI achievement reports per project. Reads local transcripts, no telemetry.",
-  "version": "0.11.2",
+  "description": "Claude Code, Codex, Antigravity and Cursor activity in your editor: live Claude plan gauges, a Metrics view per agent, and monthly AI achievement reports per project. Reads local transcripts, no telemetry.",
+  "version": "0.12.0",
   "publisher": "haitham72",
   "license": "MIT",
   "engines": {
@@ -205,6 +205,8 @@
     "claude",
     "claude code",
     "codex",
+    "antigravity",
+    "cursor",
     "anthropic",
     "sessions",
     "usage",

@@ -281,7 +281,7 @@
     }).sort(function (a, b) { return b.value - a.value; }).slice(0, 8);
     if (pl.length) h += scope('By project') + rows(pl);
 
-    h += '<div class="usenote">Counted locally from your transcripts. Metrics cover Claude Code and Codex activity.</div>';
+    h += '<div class="usenote">Counted locally from your transcripts. Metrics cover Claude Code, Codex, Antigravity and Cursor activity. Antigravity and recent Cursor logs carry no token counts.</div>';
     return h;
   }
 

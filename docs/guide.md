@@ -13,10 +13,11 @@ The full reference for [Claude Report](../README.md): setup, requirements, what 
 
 | For | You need |
 | --- | --- |
-| Sessions, Metrics, model and context in the status bar | VS Code 1.75 or later, or a compatible editor, and Claude Code or Codex transcripts on this computer |
+| Sessions, Metrics, model and context in the status bar | VS Code 1.75 or later, or a compatible editor, and Claude Code, Codex, Antigravity or Cursor activity on this computer |
+| Antigravity and Cursor tabs | SQLite support: Node's built-in `node:sqlite` in the editor's runtime, or else the system `node` (22.13 or later, or 24) on PATH. Without it, those tabs do not appear |
 | Plan usage gauges and trend | Node.js on your PATH, the **Connect** status line hook, and a Claude plan that reports usage windows (Pro, Max, Team or Ultra) |
 | Cloud reports | The `claude` command, signed in |
-| Local reports | LM Studio or Ollama with a model loaded |
+| Local reports | LM Studio or Ollama installed. The extension starts the server and loads a model if needed |
 | PDF export | Microsoft Edge, Google Chrome or Chromium |
 
 The test suite has so far only been run on Windows. The macOS and Linux code paths exist but are unverified. The optional Outlook email draft works on Windows and macOS only.
@@ -27,13 +28,25 @@ The test suite has so far only been run on Windows. The macOS and Linux code pat
 | --- | --- |
 | **Sessions** | Lists Claude Code sessions, indicates active processes, and resumes a session in its original working directory. |
 | **Status bar** | Shows model and context from live Claude Code readings or transcript estimates. The five-hour and weekly plan gauges require the status line hook. |
-| **Metrics → Tokens** | Combines supported Claude Code and Codex logs. Select a source or filter by the open project. Includes input, output and cache usage, along with supported tool, model and activity breakdowns. |
-| **Metrics → Plan usage** | Shows the latest five-hour and weekly percentages and reset countdowns from the Claude Code status line. Burn-rate estimates use at least 15 minutes of readings from the current quota window. |
+| **Metrics → Tokens** | Each source with data gets its own tab (Claude, Codex, Antigravity, Cursor, All), and projects are merged across sources. Filter by the open project. Includes input, output and cache usage, along with supported tool, model and activity breakdowns. Until you pick a tab, Metrics opens on the editor's own agent (Antigravity in Antigravity, Cursor in Cursor), otherwise on Claude, including in Devin and Windsurf. Your last pick is remembered. |
+| **Metrics → Plan usage** | Shows the latest five-hour and weekly percentages and reset countdowns from the Claude Code status line, on the Claude and All tabs only. Burn-rate estimates use at least 15 minutes of readings from the current quota window. |
 | **Metrics → Trend** | Plots five-hour plan readings for the last 24 hours and weekly readings for the last seven days. Reuses saved Claude Control readings when available. Dashed markers indicate recorded reset times, and gaps show where readings are missing. |
 
-The activity scan reads `~/.claude/projects/**/*.jsonl` and Codex rollouts under `~/.codex/sessions` or `$CODEX_HOME/sessions`. It groups transcript working directories by their nearest Git root, or by the working directory itself if it has no repository. The report picker lists projects with eligible user prompts in the selected dates, regardless of which folder is open. File edits and commits alone do not create report eligibility. Git commits are supplementary evidence attached to selected projects.
+The activity scan reads `~/.claude/projects/**/*.jsonl`, Codex rollouts under `~/.codex/sessions` or `$CODEX_HOME/sessions`, Antigravity's `~/.gemini/antigravity/conversation_summaries.db` and Cursor's `globalStorage` `state.vscdb`. The last two are opened read-only and need the SQLite support listed under Requirements. `ANTIGRAVITY_HOME` and `CURSOR_STATE_DB` override their default locations. It groups transcript working directories by their nearest Git root, or by the working directory itself if it has no repository. The report picker lists projects with eligible user prompts in the selected dates, regardless of which folder is open. File edits and commits alone do not create report eligibility. Git commits are supplementary evidence attached to selected projects.
 
-The scan covers the named transcript sources. Native chats in other assistants, browser chat sessions, direct API usage, and standalone model-server chats are outside that coverage. Plan usage history comes from the status line and the local Claude Control usage file when present. Cache efficiency is calculated from transcript token counts.
+What each source provides:
+
+| Source | Sessions | Prompts | Turns | Tokens |
+| --- | --- | --- | --- | --- |
+| Claude Code, Codex | Yes | Yes | Yes | Yes |
+| Antigravity | Yes | Latest prompt per conversation | Agent steps | No |
+| Cursor | Chats and agent runs | Yes | Assistant replies | Summed when Cursor records them; recent versions record none |
+
+Antigravity stores token counts in an undocumented format, which is not decoded, and its index has no per-prompt times, so only the latest prompt of each conversation is counted. Projects come from the workspace folder (Antigravity) or the chat's workspace (Cursor). Antigravity subagent conversations and Cursor sub-agent and best-of-N runs add turns but not sessions or prompts. Reports can cite prompts from all four sources.
+
+Devin is not supported because its agent sessions run in the cloud and leave no local transcripts. Windsurf is not supported because its Cascade history is encrypted on disk.
+
+The scan covers the named sources. Native chats in other assistants, browser chat sessions, direct API usage, and standalone model-server chats are outside that coverage. Plan usage history comes from the status line and the local Claude Control usage file when present. Cache efficiency is calculated from transcript token counts.
 
 ## Report workflow
 
@@ -44,7 +57,11 @@ The scan covers the named transcript sources. Native chats in other assistants, 
 - **Manage** lets you open a report, edit or remove projects, export, enhance all or selected projects with another model, compare revisions, review runtime timings, and manage saved copies. Enhance normally reuses the saved evidence sample. Create a fresh report for the same dates to use the current scanner and available history.
 - **AI time estimates** are optional. Edit an example to record time yourself. A user-supplied value takes precedence where a task matches.
 
-In **Cloud**, Quick defaults to Haiku at medium effort for project cards and Sonnet at high effort for the overview. Deep uses Haiku for project reviews and Sonnet for its final synthesis. In **Local**, the selected model handles both parts on this computer. See [Reports](reports.md) and [Local models](local-models.md).
+In **Cloud**, Quick defaults to Haiku at medium effort for project cards and Sonnet at high effort for the overview. Deep uses Haiku for project reviews and Sonnet for its final synthesis. In **Local**, the selected model handles both parts on this computer. The Report tab has a Model section with a Cloud or Local switch. With Local on it shows the chosen model, or "Auto: best model that fits", and a "Choose model..." link that opens the full picker in the Connect tab.
+
+If the local server is not running, the extension starts it when a local report begins and when the Connect tab opens with Local on: `lms server start` for LM Studio (if the service does not wake, it opens the LM Studio app and asks again) and `ollama serve` for Ollama. With no model picked, it uses the loaded model, else the largest model that fits in free GPU memory with at least 16k context, else the smallest.
+
+Before loading a model that does not fit the GPU memory free right now, it asks. If the model needs more than is free, part of it would run from system memory, which is much slower, and you can choose Load anyway, Use a model that fits, or Recheck. If it fits but context would be under 16k tokens, it says the context will be limited and offers Continue, Use a model that fits, or Recheck. Cancel ends the run quietly. With no NVIDIA card there is nothing to measure, so there is no prompt. A load that really runs out of memory says so and names models that fit. See [Reports](reports.md) and [Local models](local-models.md).
 
 <p align="center">
   <img src="../media/screenshots/report-page.png" width="640" alt="An example monthly report with totals, an overview, a daily token chart and a ranked project list">
@@ -78,9 +95,9 @@ For report design work, start with `template/report.html` and use `design/build-
 
 | Change | Start here |
 | --- | --- |
-| Sessions, metrics, project identity | `src/sessions.js`, `src/scan-worker.js`, `src/scan.js`, `src/codex-activity.js` |
+| Sessions, metrics, project identity | `src/sessions.js`, `src/scan-worker.js`, `src/scan.js`, `src/codex-activity.js`, `src/antigravity-activity.js`, `src/cursor-activity.js`, `src/sqlite-read.js`, `src/sources.js` |
 | Status line and plan history | `bin/hook.js`, `src/live.js`, `template/panel/metrics.js` |
-| Report generation and models | `src/generate.js`, `src/overview.js`, `src/claude.js`, `src/local-report.js`, `skills/` |
+| Report generation and models | `src/generate.js`, `src/overview.js`, `src/claude.js`, `src/local-report.js`, `src/local-fit.js`, `skills/` |
 | Deep evidence, scheduling and cache | `src/deep-git.js`, `src/deep-review.js`, `src/deep-stages.js` |
 | Saved reports, editing and exports | `src/report-store.js`, `src/report-management.js`, `src/report-editor.js`, `src/export.js` |
 | Report UI and progress | `template/report.html`, `src/render.js`, `template/panel/shell.html` |

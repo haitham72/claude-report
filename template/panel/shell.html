@@ -181,7 +181,7 @@ html, body { margin: 0; padding: 0; font-family: var(--vscode-font-family); font
 (function () {
   var api = typeof acquireVsCodeApi === 'function' ? acquireVsCodeApi() : { postMessage: function () {}, getState: function () { return null; }, setState: function () {} };
   var saved = api.getState() || {};
-  var S = { tab: 'sessions', openOnly: !!saved.openOnly, metricSource: saved.metricSource || 'all', sel: saved.sel || {}, local: null, sessOnly: !!saved.sessOnly, test: null, d: null, items: [], stage: '', running: false, spin: false };
+  var S = { tab: 'sessions', openOnly: !!saved.openOnly, metricSource: saved.metricSource || null, sel: saved.sel || {}, local: null, sessOnly: !!saved.sessOnly, test: null, d: null, items: [], stage: '', running: false, spin: false };
   S.progressView = saved.progressView === 'flow' ? 'flow' : 'list';
   S.phases = [];
   var app = document.getElementById('app');
@@ -209,10 +209,12 @@ html, body { margin: 0; padding: 0; font-family: var(--vscode-font-family); font
     }).join('') + '</div>';
   }
 
+  // The user's last pick wins; until then the editor's own agent (sent as defaultSource), else All.
   function sourceSelection() {
     var sources = S.d.metricSources || [];
-    if (!sources.some(function (source) { return source.id === S.metricSource; })) return 'all';
-    return S.metricSource;
+    var has = function (id) { return sources.some(function (source) { return source.id === id; }); };
+    if (S.metricSource && (S.metricSource === 'all' || has(S.metricSource))) return S.metricSource;
+    return has(S.d.defaultSource) ? S.d.defaultSource : 'all';
   }
 
   function sourceButtons() {
@@ -230,10 +232,11 @@ html, body { margin: 0; padding: 0; font-family: var(--vscode-font-family); font
     if (!d || !d.metrics) return d && d.error ? '<div class="cp-note">' + esc(d.error) + '</div>' : splash('Reading 30 days of usage…');
     var selected = sourceSelection();
     var source = (d.metricSources || []).find(function (item) { return item.id === selected; });
-    var lead = d.connected === false && (selected === 'all' || selected === 'claude')
+    var planTab = selected === 'all' || !!(source && source.plan);
+    var lead = d.connected === false && planTab
       ? '<div class="cp-lead"><span>Plan usage needs Claude Code connected.</span><button data-tab="connect">Connect</button></div>' : '';
     var metrics = source ? source.metrics : d.metrics;
-    var plan = selected !== 'codex' && metrics.showUsageTrend !== false;
+    var plan = planTab && metrics.showUsageTrend !== false;
     return lead + window.ClaudeReportMetrics.render(Object.assign({}, metrics, {
       showUsageTrend: plan,
       live: d.live || metrics.live,
@@ -333,6 +336,11 @@ html, body { margin: 0; padding: 0; font-family: var(--vscode-font-family); font
     var ex = d.export || {};
     var local = S.local || d.localPrefs || {};
     var cloud = d.cloud || d.models;
+    var P = d.localPrefs || {};
+    var lOn = !!local.enabled;
+    var lModel = local.model || P.model || '';
+    // No pick is fine: the host starts the server and takes the best model that fits the GPU.
+    var needModel = false;
     var busy = S.running;
     var h = '<div class="cp-scope"><span class="dot"></span>Report<span class="path">' + esc(d.monthLabel || '') + '</span></div>';
 
@@ -350,6 +358,15 @@ html, body { margin: 0; padding: 0; font-family: var(--vscode-font-family); font
         '" aria-checked="' + !!ex[key] + '"><span class="sw' + (ex[key] ? ' on' : '') + '"></span><span class="state">' +
         (ex[key] ? 'ON' : 'OFF') + '</span></button></div>';
     };
+    h += '<div class="cp-scope sub">Model</div>';
+    var engName = '';
+    var engId = local.engine || P.engine;
+    if (engId) engName = ((local.engines || []).filter(function (e) { return e.engine === engId; })[0] || {}).name || ({ lmstudio: 'LM Studio', ollama: 'Ollama' })[engId] || '';
+    var modelDesc = lOn ? (lModel ? esc(lModel) : 'Auto: best model that fits') + (engName ? ' · ' + esc(engName) : '') : cloud ? esc(cloud.project) + ' per project · ' + esc(cloud.final) + ' overview' : '';
+    h += '<div class="row"><div class="body"><div class="l">Run on</div><div class="d">' + modelDesc + '</div></div><span class="seg" role="group" aria-label="Run on">' +
+      '<button type="button" data-mode="cloud" class="' + (lOn ? '' : 'on') + '" aria-pressed="' + !lOn + '">Cloud</button>' +
+      '<button type="button" data-mode="local" class="' + (lOn ? 'on' : '') + '" aria-pressed="' + lOn + '">Local</button></span></div>';
+    if (lOn) h += '<div class="row"><div class="body"><div class="cp-links"><a data-tab="connect">Choose model…</a></div></div></div>';
     h += '<div class="cp-scope sub">Output</div>';
     var optionButtons = function (key, label, choices, selected) {
       return '<div class="row"><div class="body"><div class="l">' + esc(label) + '</div></div><span class="seg" role="group" aria-label="' + esc(label) + '">' +
@@ -370,8 +387,8 @@ html, body { margin: 0; padding: 0; font-family: var(--vscode-font-family); font
     h += '<div class="row"><div class="body"><div class="l">Format</div><div class="d">PDF needs Edge or Chrome</div></div><span class="seg"><a data-fmt="html" class="' + (ex.format !== 'pdf' ? 'on' : '') + '">HTML</a><a data-fmt="pdf" class="' + (ex.format === 'pdf' ? 'on' : '') + '">PDF</a></span></div>';
     h += sw('save', 'Save a copy', esc(ex.folderLabel || 'Downloads') + ' · <span class="cp-links"><a data-act="pickFolder">change</a></span>');
 
-    h += '<div class="cp-cta"><div class="report-actions"><button type="button" class="btn' + (busy || !n ? ' off' : '') + '" data-act="create"' + (busy || !n ? ' disabled' : '') + '>' +
-      (busy ? 'Running report…' : n ? (ex.depth === 'deep' ? 'Create deep report' : 'Create report') + ' · ' + n + ' project' + (n === 1 ? '' : 's') : 'Pick a project') + '</button></div>' +
+    h += '<div class="cp-cta"><div class="report-actions"><button type="button" class="btn' + (busy || !n || needModel ? ' off' : '') + '" data-act="create"' + (busy || !n || needModel ? ' disabled' : '') + '>' +
+      (busy ? 'Running report…' : n && !needModel ? (ex.depth === 'deep' ? 'Create deep report' : 'Create report') + ' · ' + n + ' project' + (n === 1 ? '' : 's') : needModel ? 'Pick a local model' : 'Pick a project') + '</button></div>' +
       '<div class="cp-sub">' + esc(local.enabled ? (local.model || 'Local model') + ' · full report on this computer' : cloud ? cloud.project + ' per project · ' + cloud.final + ' overview' : '') + '</div></div>';
 
     h += reportProgress();
@@ -388,7 +405,7 @@ html, body { margin: 0; padding: 0; font-family: var(--vscode-font-family); font
           '<button type="button" class="iconbtn report-manage" data-act="manage"' + ref + ' title="Manage report" aria-label="' + esc('Manage ' + label + (date ? ', ' + date : '')) + '">⋯</button></div>';
       });
     }
-    h += '<div class="cp-note">Report sources can include Claude Code and Codex. Local runs on this computer. Cloud sends redacted prompts through Claude Code.</div>';
+    h += '<div class="cp-note">Report sources can include Claude Code, Codex, Antigravity and Cursor. Local runs on this computer. Cloud sends redacted prompts through Claude Code.</div>';
     return h;
   }
 
@@ -412,7 +429,7 @@ html, body { margin: 0; padding: 0; font-family: var(--vscode-font-family); font
       h += row('Overview', 'writes the three monthly cards', '<span class="val">' + esc(cloud.final || 'sonnet · high') + '</span>');
       return h;
     }
-    if (!L || L.checking) return h + row('Checking local server', '', '<span class="dim" role="status">…</span>');
+    if (!L || L.checking) return h + row(L && L.starting ? 'Starting ' + esc(L.starting) : 'Checking local server', '', '<span class="dim" role="status">…</span>');
     if (L.error) return h + row(esc(L.error), '', '<button type="button" class="btn sm" data-act="localScan">Retry</button>');
     var eng = L.engines.filter(function (e) { return e.engine === L.engine; })[0] || {};
     h += row('Engine', eng.running ? 'running on ' + esc(eng.baseUrl.replace('http://', '')) : 'not running, start its server', '<span class="seg">' + L.engines.map(function (e) {
@@ -501,7 +518,7 @@ html, body { margin: 0; padding: 0; font-family: var(--vscode-font-family); font
   app.addEventListener('click', function (e) {
     var t = e.target.closest('[data-tab],[data-act],[data-proj],[data-opt],[data-fmt],[data-sid],[data-eng],[data-lm],[data-mode],[data-source],[data-thinking]');
     if (!t) return;
-    if (t.dataset.tab) { S.tab = t.dataset.tab; persist(); render(); if (S.tab === 'connect' && ((S.d && S.d.localPrefs) || {}).enabled && !S.local) post({ cmd: 'localScan' }); return; }
+    if (t.dataset.tab) { S.tab = t.dataset.tab; persist(); render(); if (S.tab === 'connect' && (((S.d && S.d.localPrefs) || {}).enabled || (S.local && S.local.enabled)) && !(S.local && !S.local.checking)) post({ cmd: 'localScan' }); return; }
     if (t.dataset.source) { S.metricSource = t.dataset.source; persist(); render(); return; }
     if (t.dataset.mode) {
       S.local = { enabled: t.dataset.mode === 'local', checking: true };

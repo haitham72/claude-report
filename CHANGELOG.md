@@ -2,6 +2,21 @@
 
 All notable changes are listed here, newest first.
 
+## 0.12.0
+
+- Adds Antigravity and Cursor as activity sources next to Claude Code and Codex. Antigravity is read from `~/.gemini/antigravity/conversation_summaries.db` and Cursor from its `globalStorage` `state.vscdb`, both read-only. Antigravity gives sessions, the latest prompt per conversation, agent steps (counted as turns) and projects from the workspace folder. Cursor gives sessions (chats and agent runs), prompts, turns (assistant replies) and projects from the chat's workspace.
+- Antigravity shows no token counts, because it stores them in an undocumented format that is not decoded. Cursor token counts are summed when Cursor records them, but recent Cursor versions record none, so Cursor shows prompts and turns, not tokens. Subagent conversations (Antigravity) and sub-agent and best-of-N runs (Cursor) add turns but not sessions or prompts.
+- Both new sources need SQLite support: Node's built-in `node:sqlite` in the editor's runtime, or else the system `node` (22.13 or later, or 24) on PATH. Without it, their tabs do not appear. `ANTIGRAVITY_HOME` and `CURSOR_STATE_DB` override the default locations.
+- Devin and Windsurf are not supported. Devin runs its agent sessions in the cloud, so there are no local transcripts. Windsurf's Cascade history is encrypted on disk.
+- Metrics gets a tab for each source that has data (Claude, Codex, Antigravity, Cursor, All). Projects are merged across sources, and reports can cite prompts from all four.
+- Metrics opens on the right tab first. Until you pick a tab, it opens on the editor's own agent (Antigravity in Antigravity, Cursor in Cursor), otherwise on Claude, including in Devin and Windsurf. Your last pick is remembered.
+- The five-hour and weekly plan gauges now appear only on the Claude and All tabs. Before, they showed on every tab except Codex.
+- Adds a Model section to the Report tab with a Cloud or Local switch. With Local on, it shows the chosen model (or "Auto: best model that fits") and a "Choose model..." link that opens the full model picker in the Connect tab.
+- Starts the local server when it is not running: `lms server start` for LM Studio (if LM Studio's service does not wake, it opens the app and asks again) and `ollama serve` for Ollama. This happens when a local report starts and when the Connect tab opens with Local on.
+- Picks a local model when you have not chosen one: the loaded model, else the largest model that fits in free GPU memory with at least 16k context, else the smallest.
+- Asks before loading a model that does not fit the GPU memory free right now. It reports the free and needed memory and offers Load anyway, Use a model that fits, or Recheck. When the model fits but context would be under 16k tokens, it says the context will be limited and offers Continue, Use a model that fits, or Recheck. Cancel ends the run quietly. With no NVIDIA card there is nothing to measure, so there is no prompt.
+- Removes the hard refusal "This model would exceed the 90% GPU memory budget". A load that really runs out of memory now says so and names models that fit.
+
 ## 0.11.2
 
 - Runs in several editors at once. The status-line hook is copied to a folder per version (`~/.claude-report/runtime/<version>/`), so editors on different builds never overwrite each other's copy or a file Claude Code is running. The newest build moves the status line forward; an older build in another editor never moves it back.
