@@ -111,7 +111,7 @@ function applyInstall({ settingsPath, hookPath, nodePath, configDir = DEFAULT_DI
     backedUpTo = bak;
   }
   fs.mkdirSync(configDir, { recursive: true });
-  if (!plan.legacy) fs.writeFileSync(path.join(configDir, 'config.json'), JSON.stringify({ chain: plan.chain }, null, 2) + '\n');
+  if (!plan.legacy) writeFileAtomic(path.join(configDir, 'config.json'), JSON.stringify({ chain: plan.chain }, null, 2) + '\n');
   writeSettings(settingsPath, plan.settings);
   return { ...plan, backedUpTo };
 }
@@ -154,6 +154,7 @@ function migrateLegacy(newDir, oldDir = path.join(require('os').homedir(), '.ide
 // are never touched. Best effort: a locked file just stays until next time.
 function pruneRuntimes(destDir, keep = []) {
   const root = path.join(destDir, 'runtime');
+  const fold = (p) => (process.platform === 'win32' ? p.toLowerCase() : p);
   const kept = keep.filter(Boolean).map((p) => path.resolve(p));
   const floor = kept.map(runtimeVersionOf).reduce((a, b) => (cmpVersion(a, b) <= 0 ? a : b), [Infinity, 0, 0]);
   const removed = [];
@@ -163,7 +164,7 @@ function pruneRuntimes(destDir, keep = []) {
     const dir = path.join(root, name);
     const versioned = /^\d+\.\d+\.\d+$/.test(name);
     if (!versioned && name !== 'bin' && name !== 'src') continue;
-    if (kept.some((p) => p.startsWith(dir + path.sep))) continue;
+    if (kept.some((p) => fold(p).startsWith(fold(dir + path.sep)))) continue;
     if (versioned && !(floor[0] !== Infinity && cmpVersion(runtimeVersionOf(path.join(dir, 'bin', 'hook.js')), floor) < 0)) continue;
     try { fs.rmSync(dir, { recursive: true, force: true }); removed.push(name); } catch { /* locked: try again next start */ }
   }

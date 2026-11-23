@@ -24,15 +24,16 @@ function readRepository(root, from, to, spawn = spawnSync) {
   if (result.error || result.status !== 0) return { name, unavailable: true, commits: [] };
   // Only the report author's commits are listed. A shared repository would otherwise credit teammates' work.
   const author = repositoryAuthor(root, spawn);
+  if (!author) return { name, commits: [], authorUnknown: true };
   const commits = [];
   for (const line of result.stdout.split(/\r?\n/)) {
     const [hash, at, authored, email, ...subject] = line.split('\t');
     const date = new Date(at);
     if (!/^[a-f0-9]{40,64}$/.test(hash) || !(date >= from && date < to)) continue;
-    if (author && String(email || '').toLowerCase() !== author) continue;
+    if (String(email || '').toLowerCase() !== author) continue;
     commits.push({ hash, at, authored, subject: redact(subject.join(' ')).slice(0, 250) });
   }
-  return { name, commits, ...(author ? {} : { authorUnknown: true }) };
+  return { name, commits };
 }
 
 function collectGit(projects, month, now = new Date(), spawn = spawnSync, dateRange) {

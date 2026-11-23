@@ -394,3 +394,21 @@ test('a stopped local server is never started for the user: Connect offers an Op
   s.click({ act: 'openEngine' });
   assert.ok(s.sent.some((m) => m.cmd === 'openEngine'));
 });
+test('the active tab survives a reload, and Connect rescans on each entry with pending feedback', () => {
+  const s = boot();
+  s.msg({ type: 'state', d: { ...state, connected: true, localPrefs: { enabled: true, engine: 'lmstudio' } } });
+  s.click({ tab: 'connect' });
+  assert.strictEqual(s.saved.tab, 'connect');
+  assert.strictEqual(s.sent.filter((m) => m.cmd === 'localScan').length, 1);
+  s.msg({ type: 'local', d: { enabled: true, engine: 'lmstudio', engines: [], models: [] } });
+  s.click({ tab: 'sessions' });
+  s.click({ tab: 'connect' });
+  assert.strictEqual(s.sent.filter((m) => m.cmd === 'localScan').length, 2);
+  assert.ok(s.app.innerHTML.includes('Checking local server'));
+});
+
+test('Only the open project on Sessions is a keyboard-operable switch', () => {
+  const s = boot();
+  s.msg({ type: 'state', d: { ...state, openProject: 'p', sessions: [] } });
+  assert.match(s.app.innerHTML, /<button[^>]*role="switch"[^>]*data-act="sessOnly"/);
+});

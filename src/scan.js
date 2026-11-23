@@ -8,7 +8,8 @@ const os = require('os');
 const path = require('path');
 
 const { titleFrom } = require('./sessions');
-const PROJECTS_DIR = path.join(os.homedir(), '.claude', 'projects');
+// Claude Code honours CLAUDE_CONFIG_DIR; every reader of ~/.claude goes through this.
+const claudeDir = () => process.env.CLAUDE_CONFIG_DIR || path.join(os.homedir(), '.claude');
 const MAX_PROMPT_CHARS = 400;
 const COLD_MIN_PROMPT = 20000; // smaller prompts are never worth caching
 const COLD_MAX_HIT = 0.1; // below this share replayed from cache, a turn is cold
@@ -30,7 +31,13 @@ const SECRET_PATTERNS = [
   /\bgithub_pat_[A-Za-z0-9_]{20,}/g,
   /\bAKIA[0-9A-Z]{16}\b/g,
   /\bBearer\s+[A-Za-z0-9._~+/=-]{16,}/gi,
-  /\b(api[_-]?key|token|secret|password|passwd)\b\s*[:=]\s*["']?[^\s"',;]+/gi,
+  /\bAIza[0-9A-Za-z_-]{35}/g,
+  /\bglpat-[0-9A-Za-z_-]{20,}/g,
+  /\bASIA[0-9A-Z]{16}\b/g,
+  /\bAuthorization["']?\s*[:=]\s*["']?Basic\s+[A-Za-z0-9+/=]{6,}/gi,
+  /\$env:[A-Za-z_]\w*\s*=\s*\S.*$/gim,
+  /^[ \t]*set[ \t]+[A-Za-z_]\w*=\S.*$/gim,
+  /[\w-]*(?:api[_-]?key|token|secret|password|passwd)["']?\s*[:=]\s*["']?[^\s"',;]+/gi,
   /\b[A-Za-z0-9+/_-]{40,}\b/g,
   /[\w.+-]+@[\w-]+\.[\w.-]+/g
 ];
@@ -123,14 +130,17 @@ function stripDeepContext(text) {
 // Everything in [from, to), local time, grouped by project.
 function scanPeriod(from, to, { identifyProjects = false, deep = false } = {}) {
   const projects = new Map();
-  const seen = new Set();
+  const seen = new Map();
   const fromMs = from.getTime();
 
+  const PROJECTS_DIR = path.join(claudeDir(), 'projects');
   for (const file of walk(PROJECTS_DIR, [])) {
     // A file last written before the period began holds nothing from it.
     try { if (fs.statSync(file).mtimeMs < fromMs) continue; } catch { continue; }
     const topDir = path.relative(PROJECTS_DIR, file).split(path.sep)[0];
-    if (deep && path.relative(PROJECTS_DIR, file).split(path.sep).includes('subagents')) continue;
+    // Subagent transcripts add tokens/turns/tools only: they are not sessions, prompts or active time.
+    const sub = path.relative(PROJECTS_DIR, file).split(path.sep).includes('subagents');
+    if (deep && sub) continue;
     const sessionId = path.basename(file, '.jsonl');
     let lines;
     try { lines = fs.readFileSync(file, 'utf8').split('\n'); } catch { continue; }
@@ -152,6 +162,14 @@ function scanPeriod(from, to, { identifyProjects = false, deep = false } = {}) {
     const tools = {};
     const models = {};
     const hoursHist = new Array(24).fill(0);
+    const countTools = (content) => {
+      for (const b of Array.isArray(content) ? content : []) {
+        if (b && b.type === 'tool_use' && b.name) {
+          toolNames[b.id] = b.name;
+          (tools[b.name] = tools[b.name] || { calls: 0, fails: 0 }).calls += 1;
+        }
+      }
+    };
 
     for (const line of lines) {
       if (!line) continue;
@@ -168,11 +186,23 @@ function scanPeriod(from, to, { identifyProjects = false, deep = false } = {}) {
 
       if (r.type === 'assistant' && r.message && r.message.usage) {
         const id = `${r.message.id || ''}:${r.requestId || ''}`;
-        if (id !== ':') {
-          if (seen.has(id)) continue;
-          seen.add(id);
-        }
         const u = r.message.usage;
+        // Claude Code writes one line per content block of a message: usage counts once per id
+        // (output grows while streaming, so keep the max), tool calls count from every line.
+        if (id !== ':' && seen.has(id)) {
+          countTools(r.message.content);
+          const delta = Math.max((u.output_tokens || 0) - seen.get(id), 0);
+          if (delta) {
+            seen.set(id, seen.get(id) + delta);
+            tokens.output += delta;
+            const dk = dayKey(d);
+            days[dk] = (days[dk] || 0) + delta;
+            const m = shortModel(r.message.model);
+            if (m) models[m] = (models[m] || 0) + delta;
+          }
+          continue;
+        }
+        if (id !== ':') seen.set(id, u.output_tokens || 0);
         tokens.input += u.input_tokens || 0;
         tokens.output += u.output_tokens || 0;
         tokens.cacheRead += u.cache_read_input_tokens || 0;
@@ -198,12 +228,7 @@ function scanPeriod(from, to, { identifyProjects = false, deep = false } = {}) {
 
         const model = shortModel(r.message.model);
         if (model) models[model] = (models[model] || 0) + side + (u.output_tokens || 0);
-        for (const b of Array.isArray(r.message.content) ? r.message.content : []) {
-          if (b && b.type === 'tool_use' && b.name) {
-            toolNames[b.id] = b.name;
-            (tools[b.name] = tools[b.name] || { calls: 0, fails: 0 }).calls += 1;
-          }
-        }
+        countTools(r.message.content);
       } else if (r.type === 'user' && !r.isMeta && !r.isSidechain) {
         for (const b of Array.isArray(r.message && r.message.content) ? r.message.content : []) {
           const name = b && b.type === 'tool_result' && b.is_error ? toolNames[b.tool_use_id] : '';
@@ -211,8 +236,8 @@ function scanPeriod(from, to, { identifyProjects = false, deep = false } = {}) {
         }
         const raw = promptText(r.message).trim();
         const t = deep ? stripDeepContext(raw) : raw;
-        if (identifyProjects && t.startsWith('[Request interrupted')) interruptions.push({ at: d.toISOString(), source: 'claude' });
-        if (isRealPrompt(t, deep) && !isEnvLeak(t)) {
+        if (!sub && identifyProjects && t.startsWith('[Request interrupted')) interruptions.push({ at: d.toISOString(), source: 'claude' });
+        if (!sub && isRealPrompt(t, deep) && !isEnvLeak(t)) {
           prompts.push(deep ? deepPrompt(t, d.toISOString(), sessionId, 'claude')
             : { at: d.toISOString(), text: redact(t).slice(0, identifyProjects ? 800 : MAX_PROMPT_CHARS) });
           hoursHist[d.getHours()] += 1;
@@ -233,10 +258,9 @@ function scanPeriod(from, to, { identifyProjects = false, deep = false } = {}) {
     const p = projects.get(key);
     if (root) p.repositories.add(root);
     for (const k of Object.keys(tokens)) p.tokens[k] += tokens[k];
-    p.sessions.add(sessionId);
-    const title = deep ? '' : cleanTitle(heads.custom || heads.ai);
+    const title = deep || sub ? '' : cleanTitle(heads.custom || heads.ai);
+    if (!sub) { p.sessions.add(sessionId); p.activeMs += last - first; }
     if (title) p.titles.push({ at: last.toISOString(), text: title, source: 'claude' });
-    p.activeMs += last - first;
     p.prompts.push(...prompts);
     p.interruptions.push(...interruptions);
     for (const k of Object.keys(days)) p.daily[k] = (p.daily[k] || 0) + days[k];
@@ -310,4 +334,4 @@ function dayList(from, to) {
   return out;
 }
 
-module.exports = { scanMonth, scanDays, scanPeriod, lastDaysRange, dayList, dayKey, projectNameOf, projectId, gitRootOf, isEnvLeak, scrubDeep, human, redact, cleanTitle, deepPrompt, stripDeepContext };
+module.exports = { claudeDir, scanMonth, scanDays, scanPeriod, lastDaysRange, dayList, dayKey, projectNameOf, projectId, gitRootOf, isEnvLeak, scrubDeep, human, redact, cleanTitle, deepPrompt, stripDeepContext };

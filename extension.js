@@ -11,6 +11,7 @@ const { SOURCES, labelOf, productList } = require('./src/sources');
 const { detectHost, defaultSource } = require('./src/host');
 const { readPlanHistory } = require('./src/plan-history');
 const { planInstall, applyInstall, applyUninstall, installRuntime, migrateLegacy, isConnected, isWired, hookPathOf, pruneRuntimes } = require('./src/install');
+const { writeFileAtomic } = require('./src/atomic');
 const { runClaude, MODELS, EFFORTS } = require('./src/claude');
 const { generateReports, expandedProjectWords } = require('./src/generate');
 const { buildData, renderHtml, renderDocument, withExampleHours } = require('./src/render');
@@ -23,7 +24,7 @@ const { readTranscriptLive } = require('./src/transcript-live');
 const { mergeLive } = require('./src/live-merge');
 const { listSessions, ageLabel, groupOf, isUuid } = require('./src/sessions');
 const { resumeTarget } = require('./src/resume');
-const { prepareLocal, thinkingSetting } = require('./src/local-report');
+const { prepareLocal, thinkingSetting, modelInfo } = require('./src/local-report');
 const { startEngine } = require('./src/local-models');
 const { pickModel, fitAdvice, fittingModels } = require('./src/local-fit');
 const { reportDir: storedReportDir, saveRun, loadRun, listReports, recordReportExport } = require('./src/report-store');
@@ -64,11 +65,13 @@ const workspaceCwd = () => {
 
 const scans = {};
 
-function runWorker(file, workerData, signal) {
+function runWorker(file, workerData, signal, timeoutMs = 0) {
   return new Promise((resolve, reject) => {
     signal?.throwIfAborted();
     const worker = new Worker(path.join(__dirname, 'src', file), { workerData });
+    let timer;
     const finish = (callback, result) => {
+      clearTimeout(timer);
       signal?.removeEventListener('abort', abort);
       callback(result);
     };
@@ -77,6 +80,8 @@ function runWorker(file, workerData, signal) {
       worker.terminate().catch(() => {});
     };
     signal?.addEventListener('abort', abort, { once: true });
+    // A locked or huge database must not leave the caller waiting for ever.
+    if (timeoutMs > 0) timer = setTimeout(() => { finish(reject, new Error(file + ' timed out after ' + Math.round(timeoutMs / 1000) + ' s')); worker.terminate().catch(() => {}); }, timeoutMs);
     worker.once('message', (result) => finish(resolve, result));
     worker.once('error', (error) => finish(reject, error));
     worker.once('exit', (code) => finish(reject, new Error(file + ' exited without a result (' + code + ')')));
@@ -84,13 +89,14 @@ function runWorker(file, workerData, signal) {
 }
 
 const scanJobs = new Map();
+const SCAN_TIMEOUT_MS = 120000;
 
 // key 'month:YYYY-MM' for a calendar month, 'days' for the rolling Metrics window.
 async function getScan(key, maxAgeMs = SCAN_MAX_AGE_MS, input = key === 'days' ? { days: WINDOW_DAYS } : { month: key.slice(6) }) {
   const hit = scans[key];
   if (hit && Date.now() - hit.at < maxAgeMs) return hit.scan;
   if (!scanJobs.has(key)) {
-    const job = runWorker('scan-worker.js', input).then((scan) => {
+    const job = runWorker('scan-worker.js', input, undefined, SCAN_TIMEOUT_MS).then((scan) => {
       scans[key] = { at: Date.now(), scan };
       return scan;
     }).finally(() => scanJobs.delete(key));
@@ -191,7 +197,7 @@ function chainMissing() {
 function dropChain() {
   try {
     const file = path.join(HOME_DIR, 'config.json');
-    fs.writeFileSync(file, JSON.stringify({ chain: null }, null, 2) + '\n');
+    writeFileAtomic(file, JSON.stringify({ chain: null }, null, 2) + '\n');
     vscode.window.showInformationMessage('Removed. The status line now shows only the Claude Report line.');
   } catch (e) {
     vscode.window.showErrorMessage(`Claude Report: ${e.message}`);
@@ -254,6 +260,8 @@ async function resolveLocal(cfg, signal, { ask = true } = {}) {
     state = await inspectLocal(cfg, false, signal, true);
     chosen = pickModel(state.models, chosen.id) || chosen;
   }
+  // Model details (reasoning, native endpoint) were read for the configured model only; read them for the one chosen.
+  if (cfg.engine === 'ollama' && chosen.id !== cfg.model) chosen = { ...chosen, ...(await modelInfo({ engine: 'ollama', model: chosen.id }))[0] };
   const alternatives = fittingModels(state.models).map((m) => m.id);
   return { ...cfg, ...chosen, model: chosen.id, alternatives };
 }
@@ -467,7 +475,11 @@ class Panel {
     this.view = view;
     view.webview.options = { enableScripts: true };
     view.webview.html = wrapForWebview(buildPanelHtml());
-    view.webview.onDidReceiveMessage((m) => this.onMessage(m || {}));
+    // A failed write (e.g. settings.json locked by another program) is shown, never an unhandled rejection.
+    view.webview.onDidReceiveMessage((m) => this.onMessage(m || {}).catch((e) => {
+      log(`panel ${m && m.cmd}: ${e && e.message}`);
+      vscode.window.showErrorMessage(`Claude Report: ${e && e.message}`);
+    }));
     view.onDidChangeVisibility(() => { if (view.visible) this.push(false); });
     this.poll = setInterval(() => { if (this.view && this.view.visible) this.push(false); }, 15000);
     if (this.poll.unref) this.poll.unref();
@@ -518,7 +530,8 @@ class Panel {
     if (m.cmd === 'localPick') { await setLocal('model', String(m.model || '')); return this.scanLocal(); }
     if (m.cmd === 'localMode') { await setLocal('enabled', m.mode === 'local'); return this.scanLocal(); }
     if (m.cmd === 'test') return testHook(this);
-    if (m.cmd === 'opt') { await setExportOption(m.key, m.value); return this.push(false); }
+    // The folder comes from the host's own dialog, never from the webview.
+    if (m.cmd === 'opt') { if (m.key !== 'folder') await setExportOption(m.key, m.value); return this.push(false); }
     if (m.cmd === 'reportRange') {
       if (m.mode === 'month') writePref(HOME_DIR, 'report.dateRange', null);
       else if (m.mode !== 'custom' || !await chooseReportRange()) return;
@@ -623,7 +636,7 @@ class Panel {
 // The absolute node the status line will run with, so it does not depend on Claude Code's shell PATH.
 function resolveNode() {
   try {
-    const out = execFileSync(process.platform === 'win32' ? 'where' : 'which', ['node'], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] });
+    const out = execFileSync(process.platform === 'win32' ? 'where' : 'which', ['node'], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'], timeout: 5000, windowsHide: true });
     return out.split(/\r?\n/).map((s) => s.trim()).find(Boolean) || null;
   } catch {
     return null;
@@ -715,7 +728,8 @@ async function runReportTask(panel, operation, work) {
   } catch (error) {
     // 'cancelled': the user closed the GPU-memory prompt before a local load.
     if (controller.signal.aborted || error.message === 'cancelled') {
-      runtime.stage('cancelled', 'Report cancelled');
+      // Before start() the sidebar still shows the previous run; 'cancelled' would replace its Open report.
+      if (runtime.started) runtime.stage('cancelled', 'Report cancelled');
     } else {
       const message = scrubDeep(error.message || String(error));
       runtime.stage('error', message);
@@ -841,7 +855,7 @@ async function writeReport(panel, keys, runtime, { dateRange, estimateTime, dept
   const route = local
     ? 'Project summaries and the overview run in ' + (local.engine === 'ollama' ? 'Ollama' : 'LM Studio') + ' on this computer.'
     : 'Claude Code uses ' + models.project.model + ' for project cards. ' + (depth === 'deep'
-      ? 'Haiku will write up to ' + eligible.length + ' project cards now (plus an optional expansion pass for thin drafts). Next, one Deep review per project runs at ' + deepEffort + ' depth only, and Sonnet writes the final overview in one request.'
+      ? (models.project.model || 'Haiku') + ' will write up to ' + eligible.length + ' project cards now (plus an optional expansion pass for thin drafts). Next, one Deep review per project runs at ' + deepEffort + ' depth only, and ' + (models.overview.model || 'Sonnet') + ' writes the final overview in one request.'
       : models.overview.model + ' will write the overview.') + ' This uses your Claude plan and sends redacted prompts and commit summaries.';
   const ok = await vscode.window.showWarningMessage(
     'Create the ' + label + ' report for ' + eligible.length + (eligible.length === 1 ? ' project?' : ' projects?') + '\n\nActivity sources: ' + sources + ' and available Git history. A redacted evidence sample is stored locally with this run for enhancement.\n\n' + route,
@@ -972,8 +986,8 @@ async function deepReport(panel, month, parentRun, record, options = {}) {
     const local = config.enabled;
     const target = local ? await resolveLocal(config, runtime.signal) : null;
     const models = defaultModels();
-    const model = { model: target?.model || 'haiku', effort: models.project.effort || 'medium' };
-    const finalModel = { model: target?.model || 'sonnet', effort: models.overview.effort || 'high' };
+    const model = { model: target?.model || models.project.model || 'haiku', effort: models.project.effort || 'medium' };
+    const finalModel = { model: target?.model || models.overview.model || 'sonnet', effort: models.overview.effort || 'high' };
     const cloudContext = vscode.workspace.getConfiguration('claudeReport').get('deep.cloudContext');
     let context = target?.loadedContext || target?.reportContext || (local ? 8192 :
       Number.isSafeInteger(cloudContext) && cloudContext >= 2048 ? cloudContext : 200000);
@@ -1308,7 +1322,6 @@ function activate(context) {
   const side = vscode.workspace.getConfiguration('claudeReport').get('statusBarSide') === 'right' ? vscode.StatusBarAlignment.Right : vscode.StatusBarAlignment.Left;
   const slots = Array.from({ length: MAX_ITEMS }, (_, i) => vscode.window.createStatusBarItem(`claudeReport.slot${i}`, side, 100 - i));
   slots.forEach((slot) => { slot.name = 'Claude Report'; }); // lets the user hide it from the status bar menu
-  refreshStatus(slots);
   log(`status bar: ${slots.length} slots on the ${side === vscode.StatusBarAlignment.Right ? 'right' : 'left'}`);
   const tick = () => refreshStatus(slots);
   tick();

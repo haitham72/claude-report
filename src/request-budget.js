@@ -5,6 +5,9 @@
 
 // Wraps a model runner. A request is refused before it starts when its kind is not planned,
 // when it asks for a different review depth, or when the planned count is used up.
+// A request the model rejects for size is answered by a split retry, so it does not count against the plan.
+const CONTEXT_LIMIT = /context limit|context window|too (?:long|many).*tokens|prompt is too long/i;
+
 function requestBudget({ depth, limits }) {
   const used = {};
   const guard = (run) => async (request) => {
@@ -17,7 +20,13 @@ function requestBudget({ depth, limits }) {
       throw new Error('Request budget: ' + limits[kind] + ' ' + kind + ' request' + (limits[kind] === 1 ? '' : 's') + ' planned, none left.');
     }
     used[kind] = (used[kind] || 0) + 1;
-    return run(request);
+    try {
+      return await run(request);
+    } catch (error) {
+      // Refund it: the split retry then fits. Only the one retry per batch splits, so this cannot grow without bound.
+      if (CONTEXT_LIMIT.test(String(error?.message))) used[kind]--;
+      throw error;
+    }
   };
   guard.used = () => ({ ...used });
   return guard;
@@ -44,4 +53,4 @@ function plannedRequests(plan) {
   return { review: reviews, limit: reviews + live.length };
 }
 
-module.exports = { requestBudget, mapLimit, plannedRequests, DEEP_CONCURRENCY: 3 };
+module.exports = { CONTEXT_LIMIT, requestBudget, mapLimit, plannedRequests, DEEP_CONCURRENCY: 3 };

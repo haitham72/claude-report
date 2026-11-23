@@ -1,4 +1,5 @@
-/* Metrics tab. Ported in structure from claude-control (MIT, lucasdonordeste). */
+/* Metri    root.addEventListener('click', toggle);
+cs tab. Ported in structure from claude-control (MIT, lucasdonordeste). */
 (function (window) {
   'use strict';
   var SLOTS = 12;
@@ -209,23 +210,27 @@
       h += '<div class="usenote">' + (all.length - ps.length) + (all.length - ps.length === 1 ? ' other project' : ' other projects') + ' hidden</div>';
     }
 
-    var T = { input: 0, output: 0, cacheRead: 0, cacheCreate: 0, turns: 0 }, cold = 0, rebuilt = 0, idle = 0;
+    var T = { input: 0, output: 0, cacheRead: 0, cacheCreate: 0, turns: 0 }, cold = 0, rebuilt = 0, idle = 0, cIn = 0, cRead = 0, cWrite = 0;
     ps.forEach(function (p) {
       for (var k in T) T[k] += num(p.t[k]);
+      if (num(p.t.cacheRead) + num(p.t.cacheCreate) > 0) { cIn += num(p.t.input); cRead += num(p.t.cacheRead); cWrite += num(p.t.cacheCreate); }
       cold += num(p.cache.cold); rebuilt += num(p.cache.rebuilt); idle += num(p.cache.afterIdle);
     });
     var total = T.input + T.output + T.cacheRead + T.cacheCreate;
     if (!T.turns && !total) {
       return h + '<div class="empty">No usage found for this window yet.</div>';
     }
-    h += '<div class="stats">' + stat(kfmt(total), 'tokens') + stat(kfmt(T.turns), 'turns') + stat(kfmt(T.output), 'generated') + '</div>';
+    // Sources like Antigravity and Cursor report turns but no tokens: show turns instead of zeros.
+    var turnsOnly = !total && T.turns > 0;
+    h += '<div class="stats">' + (turnsOnly ? stat(kfmt(T.turns), 'turns') : stat(kfmt(total), 'tokens') + stat(kfmt(T.turns), 'turns') + stat(kfmt(T.output), 'generated')) + '</div>';
 
-    var denom = T.input + T.cacheRead + T.cacheCreate;
-    var chr = denom ? Math.round(T.cacheRead / denom * 100) : 0;
-    h += '<div class="cachebox">' + donut(chr, 'cache', chr >= 80 ? 'var(--led-on)' : chr >= 50 ? 'var(--warn)' : 'var(--danger)') +
+    // Cache ratio only counts projects that report cache reads or writes.
+    var denom = cIn + cRead + cWrite;
+    var chr = denom ? Math.round(cRead / denom * 100) : 0;
+    if (!turnsOnly) h += '<div class="cachebox">' + donut(chr, 'cache', chr >= 80 ? 'var(--led-on)' : chr >= 50 ? 'var(--warn)' : 'var(--danger)') +
       '<div class="cache-t"><div class="cache-h">Cache efficiency</div>' +
       '<div class="cache-d">Share of the prompt replayed from cache instead of re-sent. Higher means longer sessions cost far less.</div>' +
-      '<div class="cache-n">' + esc(kfmt(T.cacheRead)) + ' read · ' + esc(kfmt(T.cacheCreate)) + ' written</div></div></div>' +
+      '<div class="cache-n">' + esc(kfmt(cRead)) + ' read · ' + esc(kfmt(cWrite)) + ' written</div></div></div>' +
       '<div class="usenote">' + esc(kfmt(cold) + ' cold restarts · ' + kfmt(rebuilt) + ' tokens rebuilt · ' + kfmt(idle) + ' after 5+ min idle') +
       '<br>A cold restart sends the whole conversation again at full price.</div>';
 
@@ -233,8 +238,9 @@
     if (days.length) {
       var dv = days.map(function (d) { return ps.reduce(function (n, p) { return n + num(p.daily[d]); }, 0); });
       var dt = days.map(function (d) { return ps.reduce(function (n, p) { return n + num(p.dailyTurns[d]); }, 0); });
-      h += scope('Daily', days.length + ' days') +
-        columns(dv, function (x) { return days[x] + ' · ' + kfmt(dv[x]) + ' · ' + dt[x] + ' turns'; }) +
+      var dp = turnsOnly ? dt : dv;
+      h += scope('Daily', days.length + ' days' + (turnsOnly ? ' · turns' : '')) +
+        columns(dp, function (x) { return days[x] + ' · ' + (turnsOnly ? '' : kfmt(dv[x]) + ' · ') + dt[x] + ' turns'; }) +
         '<div class="colsx"><span>' + esc(String(days[0]).slice(5)) + '</span><span>' + esc(String(days[days.length - 1]).slice(5)) + '</span></div>';
     }
 
@@ -272,11 +278,11 @@
     ps.forEach(function (p) { Object.keys(p.models).forEach(function (m) { models[m] = (models[m] || 0) + num(p.models[m]); }); });
     var ml = Object.keys(models).map(function (m) { return { name: m.replace(/^claude-/, ''), value: models[m], display: kfmt(models[m]) }; })
       .sort(function (a, b) { return b.value - a.value; }).slice(0, 6);
-    if (ml.length) h += scope('By model') + rows(ml);
+    if (ml.length && !turnsOnly) h += scope('By model') + rows(ml);
 
     // By project
     var pl = ps.map(function (p) {
-      var v = num(p.t.input) + num(p.t.output) + num(p.t.cacheRead) + num(p.t.cacheCreate);
+      var v = turnsOnly ? num(p.t.turns) : num(p.t.input) + num(p.t.output) + num(p.t.cacheRead) + num(p.t.cacheCreate);
       return { name: p.name, value: v, display: kfmt(v), color: color[p.name] };
     }).sort(function (a, b) { return b.value - a.value; }).slice(0, 8);
     if (pl.length) h += scope('By project') + rows(pl);
@@ -287,10 +293,15 @@
 
   function bind(root, state, onChange) {
     if (!root || !root.addEventListener) return;
-    root.addEventListener('click', function (e) {
+    var toggle = function (e) {
       var el = e.target && e.target.closest ? e.target.closest('[data-mx="open"]') : null;
-      if (!el || (el.getAttribute && el.getAttribute('data-off'))) return;
+      if (!el || (el.getAttribute && el.getAttribute('data-off'))) return false;
       if (onChange) onChange({ openOnly: !(state && state.openOnly) });
+      return true;
+    };
+    root.addEventListener('click', toggle);
+    root.addEventListener('keydown', function (e) {
+      if ((e.key === 'Enter' || e.key === ' ') && toggle(e) && e.preventDefault) e.preventDefault();
     });
   }
 

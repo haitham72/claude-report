@@ -86,7 +86,7 @@ test('the sidebar Manage action edits, compares, and enhances a selected saved p
         if (message === 'Run separate Deep prompting review?') {
           assert.match(detail, /Alpha · 1 messages/);
           assert.match(detail, /Beta · 1 messages/);
-          assert.match(detail, /Project reviewer: haiku.*Final synthesis: sonnet/);
+          assert.match(detail, /Project reviewer: haiku.*Final synthesis: opus/);
           return action;
         }
         assert.equal(message, 'Enhance this saved report?');
@@ -120,7 +120,7 @@ test('the sidebar Manage action edits, compares, and enhances a selected saved p
         opportunities: [], rewrite: 'Review the implementation and list two test results.' });
     }
     if (request.kind === 'overview') {
-      assert.equal(request.model, 'sonnet');
+      assert.equal(request.model, 'opus');
       assert.equal(activeReviewWorkers, 0);
       assert.match(request.prompt, /"promptingReviews":\[\{"project":"Alpha".*"project":"Beta"/);
       assert.doesNotMatch(request.prompt, /Review the implementation for Alpha|fixture-session/);
@@ -192,7 +192,7 @@ test('the sidebar Manage action edits, compares, and enhances a selected saved p
   const revision = loadRun(home, month, deep.run);
   assert.equal(revision.metadata.parentRun, original);
   assert.equal(revision.metadata.effort, 'medium');
-  assert.equal(revision.metadata.finalizerModel, 'sonnet');
+  assert.equal(revision.metadata.finalizerModel, 'opus');
   assert.equal(revision.data.promptingReview.summary, 'Both projects supplied clear scope.');
   assert.deepEqual(revision.data.dateRange, dateRange);
   assert.equal(revision.data.projects[0].promptReview.references[0].id, 'P1');
@@ -200,7 +200,7 @@ test('the sidebar Manage action edits, compares, and enhances a selected saved p
   const deepRequests = requests.filter(({ kind }) => kind === 'deep-review');
   assert.equal(deepRequests.length, 2);
   assert.equal(peakReviewWorkers, 2);
-  assert.equal(requests.at(-1).model, 'sonnet');
+  assert.equal(requests.at(-1).model, 'opus');
   assert.match(deepRequests[0].prompt, /Review the implementation for Alpha/);
   assert.doesNotMatch(deepRequests[0].prompt, /Review the implementation for Beta/);
   assert.doesNotMatch(JSON.stringify(revision.data), /fixture-session/);
@@ -213,7 +213,7 @@ test('the sidebar Manage action edits, compares, and enhances a selected saved p
   await receive({ cmd: 'create', projects: ['alpha', 'beta'] });
   assert.deepEqual(errors, []);
   assert.deepEqual(requests.slice(beforeCreate).map(({ kind, model }) => [kind, model]), [
-    ['project', 'haiku'], ['project', 'haiku'], ['deep-review', 'haiku'], ['deep-review', 'haiku'], ['overview', 'sonnet']
+    ['project', 'haiku'], ['project', 'haiku'], ['deep-review', 'haiku'], ['deep-review', 'haiku'], ['overview', 'opus']
   ]);
   await receive({ cmd: 'reportRange', mode: 'month' });
   assert.equal(posts.filter(({ type }) => type === 'state').at(-1).d.export.dateRange, null);

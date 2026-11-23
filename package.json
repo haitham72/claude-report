@@ -19,7 +19,7 @@
   ],
   "main": "./extension.js",
   "scripts": {
-    "package": "node -e \"require('node:fs').mkdirSync('dist', { recursive: true })\" && npx --yes @vscode/vsce package --no-dependencies --out dist",
+    "package": "node -e \"require('node:fs').mkdirSync('dist', { recursive: true })\" && npx --yes @vscode/vsce@4.1.1 package --no-dependencies --out dist",
     "scan": "node src/cli.js scan",
     "test": "node --test"
   },

@@ -54,12 +54,14 @@ function scanCursor(from, to, file = defaultFile(), options = {}) {
   const { identifyProjects, deep } = options;
   try {
     if (!file || !fs.existsSync(file) || !sqliteAvailable()) return [];
-    // bubble createdAt is an ISO-8601 UTC string, so string comparison is time comparison.
+    // bubble createdAt is an ISO-8601 UTC string (compares as text) or, in some builds, epoch ms (compares as a number).
     const bubbles = querySqlite(file,
       `SELECT key, ${J('$.type')} t, ${J('$.createdAt')} c, ${J('$.tokenCount.inputTokens')} i, ${J('$.tokenCount.outputTokens')} o, ` +
       `${J('$.workspaceUris[0]')} w, CASE WHEN ${J('$.type')}=1 THEN ${J('$.text')} END txt ` +
-      `FROM cursorDiskKV WHERE key LIKE 'bubbleId:%' AND ${J('$.createdAt')} >= ? AND ${J('$.createdAt')} < ?`,
-      [from.toISOString(), to.toISOString()]);
+      `FROM cursorDiskKV WHERE key LIKE 'bubbleId:%' AND (` +
+      `(json_type(CAST(value AS TEXT),'$.createdAt')='text' AND ${J('$.createdAt')} >= ? AND ${J('$.createdAt')} < ?) OR ` +
+      `(json_type(CAST(value AS TEXT),'$.createdAt') IN ('integer','real') AND ${J('$.createdAt')} >= ? AND ${J('$.createdAt')} < ?))`,
+      [from.toISOString(), to.toISOString(), from.getTime(), to.getTime()]);
     if (!bubbles.length) return [];
 
     const byComposer = new Map();

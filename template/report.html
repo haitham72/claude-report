@@ -242,7 +242,7 @@ section.block{margin-top:18px}
   };
 
   var days = arr(D.days);
-  var activeDays = days.filter(function (day) { return P.some(function (p) { return p.daily && p.daily[day] > 0; }); }).length;
+  var activeDays = days.filter(function (day) { return P.some(function (p) { return (p.daily && p.daily[day] > 0) || (p.dailyTurns && p.dailyTurns[day] > 0); }); }).length;
   var commits = P.reduce(function (s, p) { return s + (p.git ? p.git.count || 0 : 0); }, 0);
   var parts = { input: 0, output: 0, cacheRead: 0, cacheCreate: 0 }, hasParts = false;
   P.forEach(function (p) { if (p.tokenParts) { hasParts = true; Object.keys(parts).forEach(function (k) { parts[k] += p.tokenParts[k] || 0; }); } });
@@ -390,7 +390,7 @@ section.block{margin-top:18px}
   });
   html += '<section class="block" id="evidence"><div class="title"><h2>Evidence</h2></div><div class="rows">' + gitHtml.slice(0, LIMIT).join('') + '</div>' +
     (gitHtml.length > LIMIT ? '<details class="rest"><summary class="link card">Show ' + (gitHtml.length - LIMIT) + ' more repositories</summary><div class="rows">' + gitHtml.slice(LIMIT).join('') + '</div></details>' : '') + '<div class="card method" style="margin-top:8px"><b>How these numbers are counted</b><ul>' +
-    '<li>Tokens add input, output, cache reads and cache writes from Claude Code and Codex logs, so cache reads can dominate the total. Antigravity and Cursor add prompts and turns; their logs carry no usable token counts.</li>' +
+    '<li>Tokens add input, output, cache reads and cache writes from Claude Code and Codex logs, so cache reads can dominate the total. Antigravity and recent Cursor logs add prompts and turns but carry no token counts.</li>' +
     '<li>Prompts are your own messages. Sessions started by an agent for a subtask are not counted as prompts.</li>' +
     '<li>A commit is a recorded change in a repository. It shows when the change was recorded, not that a prompt produced it.</li>' +
     '<li>Time saved is an estimate and appears only for examples with a recorded result. All times are UTC.</li></ul></div></section>';

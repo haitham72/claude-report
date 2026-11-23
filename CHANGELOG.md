@@ -19,6 +19,14 @@ All notable changes are listed here, newest first.
 - Gives each project card its session titles as context: the titles Claude Code, Codex, Antigravity and Cursor already keep for each session (one line each, newest first, at most 30, redacted). They take at most 15% of the prompt budget and are never quoted as evidence.
 - Removes hook copies older than the one in use from `~/.claude-report/runtime/` on startup, along with the unversioned copy from before 0.11.2.
 - Antigravity reads prompt text only for conversations in the report window.
+- Claude Code subagent transcripts no longer count as sessions or prompts (their tokens and turns still count), so session totals drop to the sessions you started. Streamed replies count their final output tokens and every tool call.
+- Redacts more secrets before Cloud mode: quoted or prefixed keys and passwords, Google API keys, GitLab tokens, AWS temporary keys, Basic auth headers, and PowerShell and cmd environment lines.
+- Settings and hook files are never written in place: a locked file now fails cleanly instead of risking a half-written settings.json, and the original status line is saved atomically. The hook finds its own data folder, retries locked writes, and leaves no temp files. Chained status lines with quotes, ~ or VAR=value run through the shell.
+- Antigravity and Cursor tabs show turns instead of empty token charts, and cache efficiency counts only sources that report cache use. Report active days count days with turns.
+- Deep reviews use the configured project and final models, fit a context split within the request budget, and keep only verified batch summaries. Git evidence skips repositories with no known author instead of crediting every commit. Cloud Deep review runs Claude Code installed through npm on Windows.
+- Cursor reads bubbles with numeric timestamps, SQLite reads wait up to 5 seconds on a busy database, and a scan that hangs is stopped after 2 minutes.
+- The sidebar keeps its tab after Refresh, rescans local servers when Connect opens, shows progress for local changes, and its project switches work from the keyboard.
+- Release jobs run read-only except publishing, with exact vsce and ovsx versions.
 
 ## 0.11.2
 

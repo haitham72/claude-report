@@ -202,12 +202,12 @@ test('Git evidence reads all refs, filters dates and authors, and keeps commits 
   assert.equal(summarizeGit(evidence.sample).commits[0].subject, 'Add feature');
 });
 
-test('Git evidence marks unknown authors and keeps every commit rather than guessing', () => {
+test('Git evidence marks unknown authors and lists no commits rather than crediting teammates', () => {
   const stamp = '2026-11-18T12:00:00Z';
   const spawn = (git, command) => command.includes('config') ? { status: 1, stdout: '' }
     : { status: 0, stdout: ['a'.repeat(40), stamp, stamp, 'someone@example.test', 'Change'].join('\t') };
   const evidence = collectGit([{ name: 'sample', repositories: [path.join(os.tmpdir(), 'repo')] }], '2026-11', new Date('2026-11-20T00:00:00Z'), spawn);
-  assert.equal(evidence.sample.count, 1);
+  assert.equal(evidence.sample.count, 0);
   assert.equal(evidence.sample.repositories[0].authorUnknown, true);
 });
 

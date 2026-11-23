@@ -11,12 +11,12 @@ const localPart = (email) => (typeof email === 'string' && email.includes('@') ?
 
 function accountUsername() {
   try {
-    const j = JSON.parse(fs.readFileSync(path.join(os.homedir(), '.claude.json'), 'utf8'));
+    const j = JSON.parse(fs.readFileSync(process.env.CLAUDE_CONFIG_DIR ? path.join(process.env.CLAUDE_CONFIG_DIR, '.claude.json') : path.join(os.homedir(), '.claude.json'), 'utf8'));
     const u = localPart(j.oauthAccount && j.oauthAccount.emailAddress);
     if (u) return u;
   } catch { /* not signed in through Claude Code */ }
   try {
-    const out = execFileSync('git', ['config', 'user.email'], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] });
+    const out = execFileSync('git', ['config', 'user.email'], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'], timeout: 5000, windowsHide: true });
     const u = localPart(out.trim());
     if (u) return u;
   } catch { /* no git identity */ }

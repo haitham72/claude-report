@@ -4,15 +4,13 @@
 // status bar works in every IDE (the VS Code extension never runs statusLine).
 // Only the tail of the newest transcript is read, and only numbers/names leave.
 const fs = require('fs');
-const os = require('os');
 const path = require('path');
 
-const DEFAULT_DIR = path.join(os.homedir(), '.claude', 'projects');
 const TAIL_BYTES = 96 * 1024;
 const STALE_MS = 10 * 60 * 1000;
 const MAX_CANDIDATES = 40;
 // Our own tooling runs Claude in these folders; they must not hijack the bar.
-const IGNORED_CWD = ['claude-report-work', 'claude-report-work'];
+const IGNORED_CWD = ['claude-report-work', 'ide-companio-work'];
 
 // Heuristic: transcripts do not say whether the 1M window is on, so a turn that
 // already holds more than 200k tokens can only have fit in the 1M window.
@@ -80,7 +78,7 @@ function summarise(recs) {
   return { cwd, sessionId, last };
 }
 
-function readTranscriptLive({ projectsDir = DEFAULT_DIR, cwd, now = Date.now(), maxAgeMs = 6 * 3600 * 1000 } = {}) {
+function readTranscriptLive({ projectsDir = path.join(require('./scan').claudeDir(), 'projects'), cwd, now = Date.now(), maxAgeMs = 6 * 3600 * 1000 } = {}) {
   try {
     const want = cwd ? norm(cwd) : null;
     let fallback = null;

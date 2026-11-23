@@ -240,3 +240,8 @@ test('advice is its own section with official links only, and collapsed rows car
   assert.ok(/class="pico"[^>]*><svg/.test(html));
   assert.ok(!mount(buildData({ month: '2026-11', scan, reports: { 'a</script>b': report([example()]) }, overview: { summary: 's', goal: 'g', achievement: 'a' }, now: new Date(2026, 10, 18) })).app.innerHTML.includes('id="advice"'));
 });
+
+test('buildData keeps dailyTurns for turn-only sources', () => {
+  const d = buildData({ month: '2026-11', scan: { projects: [{ name: 'x', totalTokens: 0, sessions: 1, promptCount: 2, dailyTurns: { '2026-11-02': 2 } }] }, now: new Date(2026, 10, 18) });
+  assert.deepStrictEqual(d.projects[0].dailyTurns, { '2026-11-02': 2 });
+});

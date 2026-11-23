@@ -116,12 +116,10 @@ function activityFromSession(file, from, to, names, { identifyProjects, deep, th
       if (!text || text.startsWith('<environment_context>') || isEnvLeak(text)) continue;
       const turnId = payload.turn_id || payload.internal_chat_message_metadata_passthrough?.turn_id || turn;
       // Older rollouts can mirror the same user prompt as both an event and a response item.
-      if (turnId) {
-        const key = JSON.stringify([turnId, text]);
-        const source = seenPrompts.get(key);
-        if (source && source !== record.type) continue;
-        seenPrompts.set(key, record.type);
-      }
+      const key = JSON.stringify([turnId || record.timestamp, text]);
+      const source = seenPrompts.get(key);
+      if (source && source !== record.type) continue;
+      seenPrompts.set(key, record.type);
       prompt = deep ? deepPrompt(text, at.toISOString(), session, 'codex')
         : { at: at.toISOString(), text: redact(text).slice(0, identifyProjects ? 800 : 400), source: 'codex' };
     } else if (identifyProjects && payload.type === 'turn_aborted') {

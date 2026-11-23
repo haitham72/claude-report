@@ -124,6 +124,8 @@ test('listModels LM Studio: skips embeddings, sorts loaded first, uses lms size 
     assert.strictEqual(r[0].estimated, false);
     assert.ok(r[0].maxOnGpu > 90000);
     assert.ok(r[0].maxOnGpuNow > 0 && r[0].maxOnGpuNow < r[0].maxOnGpu);
+    const roomy = await lm.listModels({ engine: 'lmstudio', fetchImpl, gpu: { ...gpu, usedMiB: 12539, freeMiB: 3837 }, exec });
+    assert.ok(roomy[0].reportContext > 0, 'a loaded model is not charged for its weights again');
     assert.strictEqual(r[1].maxOnGpu, null);
     assert.strictEqual(r[1].estimated, true);
   } finally { os.homedir = origHome; }

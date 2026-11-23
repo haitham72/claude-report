@@ -6,7 +6,30 @@ const fs = require('fs');
 const os = require('os');
 const path = require('path');
 
-const DEFAULT_DIR = path.join(os.homedir(), '.claude-report');
+// The runtime copy lives at <home>/runtime/<x.y.z>/src/live.js and the hook runs without the extension's
+// environment, so home is derived from that location; otherwise CLAUDE_REPORT_HOME or ~/.claude-report.
+function homeDir(dirname = __dirname, env = process.env) {
+  const ver = path.dirname(dirname);
+  if (/^\d+\.\d+\.\d+$/.test(path.basename(ver)) && path.basename(path.dirname(ver)) === 'runtime') return path.dirname(path.dirname(ver));
+  return env.CLAUDE_REPORT_HOME || path.join(os.homedir(), '.claude-report');
+}
+const DEFAULT_DIR = homeDir();
+
+// Renames over a file that Windows may briefly lock; the temp file never outlives the call.
+function writeTmpRename(file, text) {
+  const tmp = `${file}.${process.pid}.tmp`;
+  try {
+    fs.writeFileSync(tmp, text);
+    for (let i = 0; ; i++) {
+      try { fs.renameSync(tmp, file); return; } catch (e) {
+        if (i >= 4 || !['EPERM', 'EBUSY', 'EACCES'].includes(e.code)) throw e;
+        Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 20 * (i + 1));
+      }
+    }
+  } finally {
+    try { fs.unlinkSync(tmp); } catch { /* gone after a successful rename */ }
+  }
+}
 const DAY = 24 * 3600 * 1000;
 const STALE_MS = 10 * 60 * 1000;
 
@@ -35,9 +58,7 @@ function writeLive(status, { dir = DEFAULT_DIR, now = Date.now() } = {}) {
   const live = path.join(dir, 'live');
   fs.mkdirSync(live, { recursive: true });
   const file = path.join(live, safeId(snap.sessionId) + '.json');
-  const tmp = `${file}.${process.pid}.tmp`;
-  fs.writeFileSync(tmp, JSON.stringify(snap));
-  fs.renameSync(tmp, file);
+  writeTmpRename(file, JSON.stringify(snap));
   recordHistory(dir, snap, now);
   prune(live);
   return snap;
@@ -62,9 +83,7 @@ function saveWindows(dir, snap, now) {
     };
     fs.mkdirSync(dir, { recursive: true });
     const file = path.join(dir, 'windows.json');
-    const tmp = `${file}.${process.pid}.tmp`;
-    fs.writeFileSync(tmp, JSON.stringify(next));
-    fs.renameSync(tmp, file);
+    writeTmpRename(file, JSON.stringify(next));
   } catch { /* remembering the windows is best effort */ }
 }
 
@@ -91,18 +110,17 @@ function recordHistory(dir, snap, now) {
     if (sameBucket(hist.at(-1)) && sameBucket(hist.at(-2))) hist[hist.length - 1] = point;
     else hist.push(point);
     const file = path.join(dir, 'usage-history.json');
-    const tmp = `${file}.${process.pid}.tmp`;
-    fs.writeFileSync(tmp, JSON.stringify(hist));
-    fs.renameSync(tmp, file);
+    writeTmpRename(file, JSON.stringify(hist));
   } catch { /* history is best effort */ }
 }
 
 function prune(live) {
   try {
     for (const f of fs.readdirSync(live)) {
-      if (!f.endsWith('.json')) continue;
+      const tmp = f.endsWith('.tmp');
+      if (!tmp && !f.endsWith('.json')) continue;
       const p = path.join(live, f);
-      try { if (Date.now() - fs.statSync(p).mtimeMs > 7 * DAY) fs.unlinkSync(p); } catch { /* best effort */ }
+      try { if (Date.now() - fs.statSync(p).mtimeMs > (tmp ? 3600 * 1000 : 7 * DAY)) fs.unlinkSync(p); } catch { /* best effort */ }
     }
   } catch { /* best effort */ }
 }
@@ -172,4 +190,4 @@ function readLive({ dir = DEFAULT_DIR, now = Date.now(), maxAgeMs = 6 * 3600 * 1
   };
 }
 
-module.exports = { DEFAULT_DIR, SHARED_USAGE, writeLive, readLive, readHistory, readSharedUsage };
+module.exports = { homeDir, DEFAULT_DIR, SHARED_USAGE, writeLive, readLive, readHistory, readSharedUsage };

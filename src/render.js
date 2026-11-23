@@ -49,6 +49,7 @@ function buildData({ month, scan, reports = {}, user = '', overview = null, now 
         sessions: p.sessions,
         prompts: p.promptCount,
         daily: p.daily || {},
+        dailyTurns: p.dailyTurns || {},
         git: p.git,
         report: r && withExampleHours(r)
       };

@@ -36,7 +36,14 @@ function ownLine(s, color) {
 // "C:/path with spaces/app.exe" --flag  ->  ['C:/path with spaces/app.exe', '--flag'].
 // Returns null when the command needs a shell: pipes, redirects, variables, .cmd files.
 function splitCommand(cmd) {
-  if (/[|&<>;`$%^()]/.test(cmd.replace(/"[^"]*"/g, '""'))) return null;
+  if (/[|&<>;`$%^()'~]/.test(cmd.replace(/"[^"]*"/g, '""'))) return null;
+  if (/^\s*[A-Za-z_]\w*=/.test(cmd)) return null; // FOO=1 tool
+  // A quote glued to other text (--fmt="a b") is shell syntax; a quoted token must stand alone.
+  for (const m of cmd.matchAll(/"[^"]*"/g)) {
+    const before = cmd[m.index - 1];
+    const after = cmd[m.index + m[0].length];
+    if ((before && !/\s/.test(before)) || (after && !/\s/.test(after))) return null;
+  }
   const out = [];
   const re = /"([^"]*)"|(\S+)/g;
   let m;

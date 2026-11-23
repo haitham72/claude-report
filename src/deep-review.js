@@ -3,6 +3,7 @@
 const { projectKey } = require('./report-revision');
 const { scrubDeep } = require('./scan');
 const { parseJsonObject } = require('./generate');
+const { CONTEXT_LIMIT } = require('./request-budget');
 
 const EFFORTS = ['low', 'medium', 'high'];
 const SCOPE = {
@@ -135,7 +136,8 @@ function assessment(text, rows) {
 
 // Each batch writes about its own slice, so a split project keeps the opening summaries of its batches together.
 function summaryOf(findings, strengths, opportunities) {
-  const written = findings.map((item) => item.summary).filter(Boolean);
+  // A batch whose quotes all failed verification has nothing checkable behind its summary.
+  const written = findings.filter((item) => item.strengths.length || item.opportunities.length).map((item) => item.summary).filter(Boolean);
   if (written.length) return clip(written.slice(0, 2).join(' '), written.length === 1 ? 35 : 45);
   return strengths[0]?.text || opportunities[0].text;
 }
@@ -181,7 +183,7 @@ async function auditProject({ review, level = 'low', plan, run, model, budget, c
       findings.push(assessment(await run({ ...model, kind: 'deep-review', depth: level, label: review.name + ' · Deep ' + level,
         prompt, schema: SCHEMA, maxOutputTokens: outputBudget(context), signal }), rows));
     } catch (error) {
-      if (!retry || !/context limit|context window|too (?:long|many).*tokens|prompt is too long/i.test(error.message)) throw error;
+      if (!retry || !CONTEXT_LIMIT.test(error.message)) throw error;
       const smaller = Math.floor(Math.min(plan.rowBudget, tokens(rows)) * 0.65);
       if (smaller < 140) throw error;
       onDetail('Model requested a smaller context. Splitting this batch');

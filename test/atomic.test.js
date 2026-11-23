@@ -24,19 +24,19 @@ test('a rename that fails with EPERM is retried and then succeeds', () => {
   assert.strictEqual(fs.readFileSync(f, 'utf8'), 'two');
 });
 
-test('a target that stays locked is written in place and the temp file is removed', () => {
+test('a target that stays locked is never written in place: the rename error is thrown and the temp file removed', () => {
   const f = tmpFile();
   fs.writeFileSync(f, 'old');
-  const fsImpl = { writeFileSync: fs.writeFileSync, unlinkSync: fs.unlinkSync, renameSync: () => { throw Object.assign(new Error('EPERM'), { code: 'EPERM' }); } };
-  assert.strictEqual(writeFileAtomic(f, 'three', { fsImpl, wait() {} }), 'in-place');
-  assert.strictEqual(fs.readFileSync(f, 'utf8'), 'three');
+  const fsImpl = { writeFileSync: fs.writeFileSync, unlinkSync: fs.unlinkSync, renameSync: () => { throw Object.assign(new Error('EPERM stuck'), { code: 'EPERM' }); } };
+  assert.throws(() => writeFileAtomic(f, 'three', { fsImpl, wait() {} }), /EPERM stuck/);
+  assert.strictEqual(fs.readFileSync(f, 'utf8'), 'old');
   assert.deepStrictEqual(fs.readdirSync(path.dirname(f)).filter((n) => n.endsWith('.tmp')), []);
 });
 
-test('an error that is not a lock is not retried', () => {
+test('an error that is not a lock is not retried and is thrown', () => {
   const f = tmpFile();
   let calls = 0;
   const fsImpl = { writeFileSync: fs.writeFileSync, unlinkSync: fs.unlinkSync, renameSync: () => { calls++; throw Object.assign(new Error('ENOSPC'), { code: 'ENOSPC' }); } };
-  writeFileAtomic(f, 'x', { fsImpl, wait() {} });
+  assert.throws(() => writeFileAtomic(f, 'x', { fsImpl, wait() {} }), /ENOSPC/);
   assert.strictEqual(calls, 1);
 });

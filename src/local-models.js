@@ -226,7 +226,7 @@ async function lmsList(exec) {
 function lmStudioApp(fsImpl = fs) {
   const exists = (p) => { try { return fsImpl.statSync(p).isFile() || fsImpl.statSync(p).isDirectory(); } catch { return false; } };
   const candidates = process.platform === 'win32'
-    ? [path.join(process.env.LOCALAPPDATA || '', 'Programs', 'LM Studio', 'LM Studio.exe'), path.join(process.env.ProgramFiles || 'C:\Program Files', 'LM Studio', 'LM Studio.exe')]
+    ? [path.join(process.env.LOCALAPPDATA || '', 'Programs', 'LM Studio', 'LM Studio.exe'), path.join(process.env.ProgramFiles || 'C:\\Program Files', 'LM Studio', 'LM Studio.exe')]
     : process.platform === 'darwin' ? ['/Applications/LM Studio.app'] : [];
   return candidates.find(exists) || null;
 }
@@ -289,7 +289,7 @@ function withFit(base, gpu, meta, sizeBytes) {
     now = maxContextOnGpu({ gpu, weightsBytes: 0, kvPerToken: kv, modelMaxContext: cap }).atFreeNow;
   }
   const reportFit = ok
-    ? maxContextOnGpu({ gpu, weightsBytes: sizeBytes, kvPerToken: kv, modelMaxContext: cap, memoryFraction: 0.9 })
+    ? maxContextOnGpu({ gpu, weightsBytes: base.state === 'loaded' ? 0 : sizeBytes, kvPerToken: kv, modelMaxContext: cap, memoryFraction: 0.9 })
     : null;
   return { ...base, sizeBytes, maxOnGpu: ok ? fit.atCapacity : null, maxOnGpuNow: now,
     reportContext: reportFit?.atFreeNow ?? null, estimated: !ok };

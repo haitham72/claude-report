@@ -181,7 +181,7 @@ html, body { margin: 0; padding: 0; font-family: var(--vscode-font-family); font
 (function () {
   var api = typeof acquireVsCodeApi === 'function' ? acquireVsCodeApi() : { postMessage: function () {}, getState: function () { return null; }, setState: function () {} };
   var saved = api.getState() || {};
-  var S = { tab: 'sessions', openOnly: !!saved.openOnly, metricSource: saved.metricSource || null, sel: saved.sel || {}, local: null, sessOnly: !!saved.sessOnly, test: null, d: null, items: [], stage: '', running: false, spin: false };
+  var S = { tab: ['sessions', 'report', 'connect', 'metrics'].indexOf(saved.tab) >= 0 ? saved.tab : 'sessions', openOnly: !!saved.openOnly, metricSource: saved.metricSource || null, sel: saved.sel || {}, local: null, sessOnly: !!saved.sessOnly, test: null, d: null, items: [], stage: '', running: false, spin: false };
   S.progressView = saved.progressView === 'flow' ? 'flow' : 'list';
   S.phases = [];
   var app = document.getElementById('app');
@@ -198,7 +198,7 @@ html, body { margin: 0; padding: 0; font-family: var(--vscode-font-family); font
   };
   var TABS = [['sessions', 'Sessions'], ['metrics', 'Metrics'], ['report', 'Report'], ['connect', 'Connect']];
   var post = function (m) { api.postMessage(m); };
-  var persist = function () { api.setState({ openOnly: S.openOnly, sessOnly: S.sessOnly, metricSource: S.metricSource, sel: S.sel, progressView: S.progressView }); };
+  var persist = function () { api.setState({ tab: S.tab, openOnly: S.openOnly, sessOnly: S.sessOnly, metricSource: S.metricSource, sel: S.sel, progressView: S.progressView }); };
 
   function tabs() {
     var d = S.d || {};
@@ -251,7 +251,7 @@ html, body { margin: 0; padding: 0; font-family: var(--vscode-font-family); font
     var only = S.sessOnly && d.openProject;
     var list = d.sessions.filter(function (x) { return !only || x.project === d.openProject; });
     var h = '<div class="row act click" data-act="newSession"><svg class="ic" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><path d="M8 3v10M3 8h10"/></svg><div class="body"><div class="l">New session</div></div></div>';
-    h += '<div class="row click' + (d.openProject ? '' : ' off') + '" data-act="sessOnly"><div class="body"><div class="l">Only the open project</div></div><span class="sw' + (only ? ' on' : '') + '"></span><span class="state">' + (only ? 'ON' : 'OFF') + '</span></div>';
+    h += '<div class="row click' + (d.openProject ? '' : ' off') + '" data-act="sessOnly"><div class="body"><div class="l">Only the open project</div></div><button type="button" class="option-switch" role="switch" data-act="sessOnly" aria-checked="' + !!only + '" aria-label="Only the open project"' + (d.openProject ? '' : ' disabled') + '><span class="sw' + (only ? ' on' : '') + '"></span></button><span class="state">' + (only ? 'ON' : 'OFF') + '</span></div>';
     if (!list.length) return h + '<div class="cp-note">No sessions yet. Start one with Claude Code and it shows up here.</div>';
     ['Active', 'Today', 'Yesterday', 'Earlier'].forEach(function (g) {
       var rows = list.filter(function (x) { return x.group === g; });
@@ -517,10 +517,11 @@ html, body { margin: 0; padding: 0; font-family: var(--vscode-font-family); font
     }
   }
 
+  var pending = function () { S.local = Object.assign({}, (S.d && S.d.localPrefs) || {}, S.local, { checking: true, error: null }); render(); };
   app.addEventListener('click', function (e) {
     var t = e.target.closest('[data-tab],[data-act],[data-proj],[data-opt],[data-fmt],[data-sid],[data-eng],[data-lm],[data-mode],[data-source],[data-thinking]');
     if (!t) return;
-    if (t.dataset.tab) { S.tab = t.dataset.tab; persist(); render(); if (S.tab === 'connect' && (((S.d && S.d.localPrefs) || {}).enabled || (S.local && S.local.enabled)) && !(S.local && !S.local.checking)) post({ cmd: 'localScan' }); return; }
+    if (t.dataset.tab) { S.tab = t.dataset.tab; if (S.tab === 'connect' && (((S.d && S.d.localPrefs) || {}).enabled || (S.local && S.local.enabled))) { pending(); post({ cmd: 'localScan' }); } else { persist(); render(); } persist(); return; }
     if (t.dataset.source) { S.metricSource = t.dataset.source; persist(); render(); return; }
     if (t.dataset.mode) {
       S.local = { enabled: t.dataset.mode === 'local', checking: true };
@@ -528,9 +529,9 @@ html, body { margin: 0; padding: 0; font-family: var(--vscode-font-family); font
       post({ cmd: 'localMode', mode: t.dataset.mode });
       return;
     }
-    if (t.dataset.thinking) { post({ cmd: 'localThinking', enabled: t.dataset.thinking === 'on' }); return; }
-    if (t.dataset.eng) { post({ cmd: 'localEngine', engine: t.dataset.eng }); return; }
-    if (t.dataset.lm) { post({ cmd: 'localPick', model: t.dataset.lm }); return; }
+    if (t.dataset.thinking) { pending(); post({ cmd: 'localThinking', enabled: t.dataset.thinking === 'on' }); return; }
+    if (t.dataset.eng) { pending(); post({ cmd: 'localEngine', engine: t.dataset.eng }); return; }
+    if (t.dataset.lm) { pending(); post({ cmd: 'localPick', model: t.dataset.lm }); return; }
     if (t.dataset.sid) { post({ cmd: 'resume', id: t.dataset.sid, cwd: t.dataset.cwd, title: t.title }); return; }
     if (t.dataset.opt) {
       var key = t.dataset.opt;
@@ -556,7 +557,7 @@ html, body { margin: 0; padding: 0; font-family: var(--vscode-font-family); font
     else if (a === 'dropChain') post({ cmd: 'dropChain' });
     else if (a === 'newSession') post({ cmd: 'newSession' });
     else if (a === 'sessOnly') { S.sessOnly = !S.sessOnly; persist(); render(); }
-    else if (a === 'localScan') post({ cmd: 'localScan' });
+    else if (a === 'localScan') { pending(); post({ cmd: 'localScan' }); }
     else if (a === 'openEngine') { S.local = Object.assign({}, S.local, { checking: true }); render(); post({ cmd: 'openEngine' }); }
     else if (a === 'pickFolder') post({ cmd: 'pickFolder' });
     else if (a === 'test') { S.test = null; post({ cmd: 'test' }); }

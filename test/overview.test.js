@@ -53,3 +53,13 @@ test('generateOverview forwards and propagates cancellation', async () => {
     return '{"summary":"s","goal":"g","achievement":"a"}';
   } }), { name: 'AbortError' });
 });
+
+test('parseOverview survives prose braces around the JSON', () => {
+  const j = JSON.stringify({ summary: 's', goal: 'g', achievement: 'a' });
+  assert.strictEqual(parseOverview('Here {is} your result: ' + j + ' and {done}').summary, 's');
+});
+
+test('turn-only days count as active days', () => {
+  const e = buildEntry({ month: '2026-11', reports: { c: reports.a }, projects: [{ id: 'c', name: 'C', totalTokens: 0, promptCount: 0, daily: {}, dailyTurns: { '2026-11-03': 2, '2026-11-04': 1 } }] });
+  assert.strictEqual(e.projects[0].activeDays, 2);
+});

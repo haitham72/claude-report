@@ -138,3 +138,32 @@ test('diff line ranges stay visible in Medium and High includes only redacted ch
   assert.match(high.lines, /-old behavior\n\+new behavior/);
   assert.doesNotMatch(high.lines, /owner@example|private-irrelevant-value/);
 });
+
+test('a batch whose quotes all fail verification contributes no summary', async () => {
+  const review = prepareReview({ name: 'Sample', prompts: [
+    prompt('Verify keyboard navigation and record which focus transitions fail.', '2026-11-20', 'a'),
+    prompt('Another long enough message about database migrations.', '2026-11-21', 'b')
+  ] });
+  const plan = { payload: { project: 'Sample', depth: 'low' }, rowBudget: 5000, chunks: review.rows.map((row) => [row]), split: 'session batches', fragments: 0 };
+  let call = 0;
+  const result = await auditProject({ review, plan, model: { model: 'haiku' }, budget: 5000, run: async () => JSON.stringify(call++ === 0
+    ? { summary: 'GOOD summary.', strengths: [{ id: 'P1', quote: 'Verify keyboard navigation', text: 'Concrete check.' }], opportunities: [] }
+    : { summary: 'UNSUPPORTED summary.', strengths: [{ id: 'P2', quote: 'text that is not there at all', text: 'Invented.' }], opportunities: [] }) });
+  assert.match(result.summary, /GOOD/);
+  assert.doesNotMatch(result.summary, /UNSUPPORTED/);
+});
+
+test('a one-project run that splits after a context-limit error stays inside its request budget', async () => {
+  const { requestBudget, plannedRequests } = require('../src/request-budget');
+  const review = prepareReview({ name: 'Large', prompts: [prompt('Context '.repeat(230), '2026-11-02', 'first'), prompt('Smaller '.repeat(140), '2026-11-03', 'second')] });
+  const plan = { payload: { project: 'Large', depth: 'low' }, rowBudget: 1000, chunks: [review.rows], split: 'whole sessions', fragments: 0 };
+  const guard = requestBudget({ depth: 'low', limits: { 'deep-review': plannedRequests([{ chunks: 1, reused: false }]).limit } });
+  let calls = 0;
+  const run = guard(async () => {
+    if (calls++ === 0) throw new Error('prompt is too long');
+    return JSON.stringify({ summary: 'ok', strengths: [], opportunities: [] });
+  });
+  await auditProject({ review, plan, model: { model: 'haiku' }, budget: 1000, run: (request) => run({ ...request, depth: 'low' }) });
+  assert.ok(calls >= 3);
+  assert.equal(guard.used()['deep-review'], calls - 1);
+});

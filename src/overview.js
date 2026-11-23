@@ -19,6 +19,7 @@ function skillBody() {
 
 function coverage(project) {
   const dates = new Set(Object.entries(project.daily || {}).filter(([, tokens]) => tokens > 0).map(([day]) => day));
+  for (const [day, turns] of Object.entries(project.dailyTurns || {})) if (turns > 0) dates.add(day);
   const prompts = Array.isArray(project.prompts) ? project.prompts : [];
   for (const prompt of prompts) {
     if (!prompt?.at) continue;
@@ -100,11 +101,28 @@ const clip = (text, words) => {
   return end >= cut.length * 0.4 ? cut.slice(0, end + 1) : cut + '…';
 };
 
+// First balanced {...} in the text that parses as JSON; prose braces around it are skipped.
+function extractObject(text) {
+  const s = String(text || '');
+  for (let start = s.indexOf('{'); start !== -1; start = s.indexOf('{', start + 1)) {
+    let depth = 0, inStr = false;
+    for (let i = start; i < s.length; i++) {
+      const c = s[i];
+      if (inStr) { if (c === '\\') i++; else if (c === '"') inStr = false; }
+      else if (c === '"') inStr = true;
+      else if (c === '{') depth++;
+      else if (c === '}' && --depth === 0) {
+        try { return JSON.parse(s.slice(start, i + 1)); } catch { break; }
+      }
+    }
+  }
+  return null;
+}
+
 function parseOverview(text, { prompting = false, prompts = 0 } = {}) {
-  const m = /\{[\s\S]*\}/.exec(String(text || ''));
-  if (!m) return null;
   try {
-    const j = JSON.parse(m[0]);
+    const j = extractObject(text);
+    if (!j) return null;
     const out = {};
     for (const k of Object.keys(LIMITS)) {
       out[k] = clip(j[k], LIMITS[k]);

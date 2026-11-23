@@ -64,11 +64,14 @@ function scanAntigravity(from, to, root = path.join(process.env.ANTIGRAVITY_HOME
   const { identifyProjects = false, deep = false } = options;
   const file = path.join(root, 'conversation_summaries.db');
   let rows, chunks;
+  // Stored text is 'YYYY-MM-DD HH:MM:SS.fff+00:00' (UTC): compare its first 19 chars, padded a day for safety; JS filters exactly.
+  const sqlFrom = new Date(from.getTime() - 86400000).toISOString().slice(0, 19).replace('T', ' ');
   try {
     if (!fs.existsSync(file) || !sqliteAvailable()) return [];
     rows = querySqlite(file,
       'SELECT conversation_id, preview, title, step_count, last_modified_time, last_user_input_time, last_user_input_step_index, ' +
-      'workspace_uris, agent_name, parent_conversation_id, nesting_depth FROM conversation_summaries');
+      'workspace_uris, agent_name, parent_conversation_id, nesting_depth FROM conversation_summaries ' +
+      'WHERE substr(last_modified_time, 1, 19) >= ? OR substr(last_user_input_time, 1, 19) >= ?', [sqlFrom, sqlFrom]);
     // Prompt text is only needed for conversations whose last user input falls in the window.
     const wanted = rows.filter((r) => { const t = parseTime(r.last_user_input_time); return t && t >= from && t < to; })
       .map((r) => r.conversation_id);
@@ -128,7 +131,7 @@ function scanAntigravity(from, to, root = path.join(process.env.ANTIGRAVITY_HOME
       const title = deep ? '' : cleanTitle(String(row.title || '').trim() || String(row.preview || '').trim());
       if (title) project.titles.push({ at: (userAt || modified).toISOString(), text: title, source: 'antigravity' });
       if (!userIn) continue;
-      const raw = (latestUserText(byConversation.get(row.conversation_id) || [], Number(row.last_user_input_step_index)) ||
+      const raw = (latestUserText(byConversation.get(row.conversation_id) || [], row.last_user_input_step_index == null ? -1 : Number(row.last_user_input_step_index)) ||
         row.preview || row.title || '').trim();
       const text = deep ? stripDeepContext(raw) : raw;
       if (!text || isEnvLeak(text)) continue;

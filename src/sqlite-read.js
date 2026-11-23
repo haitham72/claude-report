@@ -16,13 +16,13 @@ function inProcess() {
 }
 
 const CHILD = "const{DatabaseSync}=require('node:sqlite');const[f,s,p]=JSON.parse(require('fs').readFileSync(0,'utf8'));" +
-  "const d=new DatabaseSync(f,{readOnly:true});try{process.stdout.write(JSON.stringify(d.prepare(s).all(...p)))}finally{d.close()}";
+  "const d=new DatabaseSync(f,{readOnly:true});try{d.exec('PRAGMA busy_timeout = 5000');process.stdout.write(JSON.stringify(d.prepare(s).all(...p)))}finally{d.close()}";
 
 function querySqlite(file, sql, params = [], { nodePath = 'node', timeout = 30000, forceChild = false } = {}) {
   const m = forceChild ? null : inProcess();
   if (m) {
     const db = new m.DatabaseSync(file, { readOnly: true });
-    try { return db.prepare(sql).all(...params).map((row) => ({ ...row })); } finally { db.close(); }
+    try { db.exec('PRAGMA busy_timeout = 5000'); return db.prepare(sql).all(...params).map((row) => ({ ...row })); } finally { db.close(); }
   }
   const out = execFileSync(nodePath, ['-e', CHILD], {
     input: JSON.stringify([file, sql, params]), encoding: 'utf8', maxBuffer: 512 * 1024 * 1024,

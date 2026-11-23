@@ -22,3 +22,7 @@ CLAUDE.md
 skills/browser-ai-report/**
 media/marketplace/**
 audit-prompt.md
+# Top-level notes and review files never ship; only the two the Marketplace page needs.
+*.md
+!README.md
+!CHANGELOG.md

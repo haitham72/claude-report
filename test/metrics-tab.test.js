@@ -92,8 +92,30 @@ test('plan trends use wall-clock ranges and break at provider resets', () => {
 });
 
 test('bind reports the toggled value', () => {
-  let h; const root = { addEventListener: (_, f) => { h = f; } };
+  let h; const root = { addEventListener: (t, f) => { if (t === 'click') h = f; } };
   let got; M.bind(root, { openOnly: false }, (s) => { got = s; });
   h({ target: { closest: () => ({ disabled: false }) } });
   assert.deepStrictEqual(got, { openOnly: true });
+});
+
+test('a source with turns but no tokens shows turns, not zero token views', () => {
+  const p = { ...proj('cursor', 1), t: { input: 0, output: 0, cacheRead: 0, cacheCreate: 0, turns: 12 }, daily: {}, models: {}, cache: {} };
+  const html = M.render({ ...D, projects: [p] }, { openOnly: false });
+  assert.ok(!html.includes('Cache efficiency') && !html.includes('generated') && !html.includes('By model'));
+  assert.ok(html.includes('· turns') && html.includes('By project') && html.includes('>12<'));
+});
+
+test('cache ratio ignores projects without cache data', () => {
+  const noCache = { ...proj('cur', 1), t: { input: 100000, output: 0, cacheRead: 0, cacheCreate: 0, turns: 5 } };
+  const withCache = { ...proj('cc', 1), t: { input: 0, output: 0, cacheRead: 900, cacheCreate: 100, turns: 5 } };
+  assert.ok(M.render({ ...D, projects: [noCache, withCache] }, {}).includes('90%'));
+});
+
+test('the open-project switch works from the keyboard', () => {
+  const l = {}; let got = null, prevented = false;
+  M.bind({ addEventListener: (t, f) => { l[t] = f; } }, { openOnly: false }, (s) => { got = s; });
+  const target = { closest: () => ({ getAttribute: () => null }) };
+  l.keydown({ key: ' ', target, preventDefault: () => { prevented = true; } });
+  assert.deepStrictEqual(got, { openOnly: true });
+  assert.ok(prevented);
 });

@@ -4,7 +4,6 @@
 // files only: transcripts for titles/prompts, the pid registry for liveness.
 // Only the head and tail of each transcript are read, never a whole file.
 const fs = require('fs');
-const os = require('os');
 const path = require('path');
 
 const HEAD_BYTES = 64 * 1024;
@@ -107,9 +106,9 @@ function readRegistry(dir, isAlive) {
 function listSessions(opts) {
   try {
     const o = opts || {};
-    const home = os.homedir();
-    const projectsDir = o.projectsDir || path.join(home, '.claude', 'projects');
-    const registryDir = o.registryDir || path.join(home, '.claude', 'sessions');
+    const dir = require('./scan').claudeDir();
+    const projectsDir = o.projectsDir || path.join(dir, 'projects');
+    const registryDir = o.registryDir || path.join(dir, 'sessions');
     const now = typeof o.now === 'number' ? o.now : Date.now();
     const limit = typeof o.limit === 'number' ? o.limit : 60;
     const isAlive = o.isAlive || defaultAlive;
