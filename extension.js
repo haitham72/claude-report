@@ -132,16 +132,25 @@ function planUsageEnabled() {
   catch { return true; }
 }
 
+// Resolves with the route that answered: 'oauth-api' is the only one that arrives after the caller has drawn.
 function refreshPlanUsageAsync() {
   return new Promise((resolve) => {
-    if (!planUsageEnabled()) return resolve();
-    getUsage(() => resolve(), { historyDir: HOME_DIR, sharedFile: SHARED_USAGE, enabled: true });
+    if (!planUsageEnabled()) return resolve('disabled');
+    getUsage((_data, _state, meta) => resolve(meta && meta.route), { historyDir: HOME_DIR, sharedFile: SHARED_USAGE, enabled: true });
   });
 }
 
 function currentLive() {
   const cwd = workspaceCwd();
   return mergeLive({ hook: readLive({ cwd, dir: HOME_DIR, sharedFile: SHARED_USAGE }), transcript: readTranscriptLive({ cwd }) });
+}
+
+// The sidebar's live gauges and plan trend: part of every state post, and posted again alone when an API answer lands.
+function planState() {
+  return {
+    live: currentLive(),
+    planHistory: readPlanHistory({ dir: HOME_DIR, controlFile: path.join(path.dirname(CLAUDE_SETTINGS), 'cursor-claude-control', 'usage-history.json') })
+  };
 }
 
 // --- bottom status bar -------------------------------------------------------
@@ -486,6 +495,7 @@ class Panel {
     this.stateRequest = 0;
     this.localRequest = 0;
     this.lastScan = null;
+    this.lastState = null; // the newest full state posted, so a late plan answer can be posted on top of it
     this.reportProgress = [];
     this.reportManager = createReportManager({
       vscode, home: HOME_DIR, openReport, runExport: (month, run) => runExport(month, run, { manual: true }),
@@ -595,8 +605,7 @@ class Panel {
         depth: metadata?.deepPlan ? 'Deep' : undefined
       })),
       archivedReportCount: history.filter((r) => r.archived).length,
-      live: currentLive(),
-      planHistory: readPlanHistory({ dir: HOME_DIR, controlFile: path.join(path.dirname(CLAUDE_SETTINGS), 'cursor-claude-control', 'usage-history.json') })
+      ...planState()
     };
   }
 
@@ -617,25 +626,21 @@ class Panel {
 
   async push(force) {
     const request = ++this.stateRequest;
-    // Post immediately; refresh plan usage in the background so a slow network cannot stall Connect/toggles.
-    refreshPlanUsageAsync().then(() => {
-      if (request !== this.stateRequest || !this.view) return;
+    // Post at once from local data so a slow network cannot stall Connect or the toggles. Cached routes
+    // have already updated the files by the time state() reads them. An API answer that lands later
+    // re-posts only the plan numbers, and the final post below carries them too instead of older ones.
+    let freshPlan = null;
+    refreshPlanUsageAsync().then((route) => {
+      if (route !== 'oauth-api' || request !== this.stateRequest) return;
       try {
-        const live = this.state();
-        this.post({
-          type: 'state',
-          d: {
-            ...live,
-            ...(this.lastScan?.monthLabel === live.monthLabel ? this.lastScan : null),
-            live: live.live,
-            planHistory: live.planHistory,
-          },
-        });
+        freshPlan = planState();
+        if (this.lastState) this.post({ type: 'state', d: { ...this.lastState, ...freshPlan } });
       } catch (e) { log(`plan usage refresh: ${e && e.message ? e.message : e}`); }
     });
     const base = this.state();
     if (this.lastScan?.monthLabel === base.monthLabel) Object.assign(base, this.lastScan);
-    this.post({ type: 'state', d: { ...base } });
+    this.lastState = { ...base };
+    this.post({ type: 'state', d: this.lastState });
     try {
       const dateRange = base.export.dateRange;
       const month = dateRange ? dateRange.to.slice(0, 7) : monthKey();
@@ -668,7 +673,9 @@ class Panel {
       base.error = String(e.message);
     }
     if (request !== this.stateRequest) return;
+    if (freshPlan) Object.assign(base, freshPlan);
     this.lastScan = { monthLabel: base.monthLabel, metrics: base.metrics, metricSources: base.metricSources, defaultSource: base.defaultSource, reportProjects: base.reportProjects };
+    this.lastState = base;
     this.post({ type: 'state', d: base });
   }
 }

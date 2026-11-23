@@ -9,7 +9,7 @@ const {
   getUsage, classifyUsageResponse, resetPlanUsageState, readOauthToken, lastUsageRoute,
   readSharedCache, writeSharedCache, slimUsagePayload, SHARED_FRESH_MS, AUTH_BACKOFF_MS,
 } = require('../src/plan-usage');
-const { readHistory, readLive, writeLive } = require('../src/live');
+const { readHistory, readLive, writeLive, ingestUsagePayload } = require('../src/live');
 
 const NOW = 1_700_000_000_000;
 
@@ -183,6 +183,41 @@ test('newer hook reading beats an older shared OAuth cache in readLive', () => {
   assert.equal(live.fiveHour.pct, 50);
 });
 
+test('an older shared reading keeps the newer hook readings in history and windows', async () => {
+  resetPlanUsageState();
+  const dir = tmp();
+  const shared = path.join(dir, 'shared.json');
+  const resets = NOW / 1000 + 3600;
+  writeSharedCache(shared, { five_hour: { utilization: 30, resets_at: new Date(resets * 1000).toISOString() } });
+  fs.utimesSync(shared, NOW / 1000, NOW / 1000);
+  const hook = (pct, at) => writeLive({
+    session_id: 's1', cwd: '/a', rate_limits: { five_hour: { used_percentage: pct, resets_at: resets } },
+  }, { dir, now: at });
+  hook(40, NOW + 20_000);
+  hook(45, NOW + 50_000);
+
+  const r = await once((cb) => getUsage(cb, {
+    now: NOW + 60_000, sharedFile: shared, historyDir: dir, readToken: () => null,
+  }));
+  assert.equal(r.meta.route, 'shared-fresh');
+  assert.deepEqual(readHistory({ dir }).map((p) => p.s), [40, 45]);
+  assert.equal(JSON.parse(fs.readFileSync(path.join(dir, 'windows.json'), 'utf8')).fiveHour.pct, 45);
+});
+
+test('ingestUsagePayload records a reading once and never over a newer one', () => {
+  const dir = tmp();
+  ingestUsagePayload(dir, payload(20, 5), NOW);
+  ingestUsagePayload(dir, payload(20, 5), NOW); // the same shared file read twice
+  ingestUsagePayload(dir, payload(10, 2), NOW - 30_000); // an older reading arriving late
+  assert.deepEqual(readHistory({ dir }).map((p) => [p.t, p.s]), [[NOW, 20]]);
+  const windows = JSON.parse(fs.readFileSync(path.join(dir, 'windows.json'), 'utf8'));
+  assert.deepEqual([windows.fiveHour.pct, windows.sevenDay.pct], [20, 5]);
+
+  ingestUsagePayload(dir, payload(25, 6), NOW + 30_000);
+  assert.deepEqual(readHistory({ dir }).map((p) => p.s), [20, 25]);
+  assert.equal(JSON.parse(fs.readFileSync(path.join(dir, 'windows.json'), 'utf8')).fiveHour.pct, 25);
+});
+
 test('429 and 401 back off through getUsage', async () => {
   resetPlanUsageState();
   const dir = tmp();
@@ -236,15 +271,17 @@ test('readOauthToken tries credentials routes before keychain and respects expir
     now: NOW,
   }), { token: 'from-config-dir' });
 
-  fs.writeFileSync(path.join(home, '.claude', '.credentials.json'), JSON.stringify({
-    claudeAiOauth: { accessToken: 'old', expiresAt: Math.floor(NOW / 1000) - 10 },
-  }));
-  assert.deepEqual(readOauthToken({
-    env: { CLAUDE_CONFIG_DIR: path.join(dir, 'empty') },
-    homedir: () => home,
-    keychain: () => null,
-    now: NOW,
-  }), { expired: true });
+  // Claude Code writes expiresAt in milliseconds; seconds are accepted too.
+  const withExpiry = (expiresAt) => {
+    fs.writeFileSync(path.join(home, '.claude', '.credentials.json'), JSON.stringify({
+      claudeAiOauth: { accessToken: 'tok', expiresAt },
+    }));
+    return readOauthToken({ env: {}, homedir: () => home, keychain: () => null, now: NOW });
+  };
+  assert.deepEqual(withExpiry(NOW - 10_000), { expired: true });
+  assert.deepEqual(withExpiry(NOW + 3_600_000), { token: 'tok' });
+  assert.deepEqual(withExpiry(Math.floor(NOW / 1000) - 10), { expired: true });
+  assert.deepEqual(withExpiry(Math.floor(NOW / 1000) + 3600), { token: 'tok' });
 
   fs.writeFileSync(path.join(home, '.claude', '.credentials.json'), JSON.stringify({ claudeAiOauth: { accessToken: 'from-home' } }));
   assert.deepEqual(readOauthToken({

@@ -40,13 +40,17 @@ function slimUsagePayload(j) {
   return out;
 }
 
+// Claude Code writes expiresAt in milliseconds; seconds are accepted too.
+function credentialOf(oauth, now) {
+  if (!oauth || typeof oauth.accessToken !== 'string' || !oauth.accessToken) return null;
+  const exp = oauth.expiresAt;
+  if (Number.isFinite(exp) && (exp > 1e12 ? exp : exp * 1000) <= now) return { expired: true };
+  return { token: oauth.accessToken };
+}
+
 function tokenFromCredentials(file, now = Date.now()) {
   try {
-    const oauth = JSON.parse(fs.readFileSync(file, 'utf8')).claudeAiOauth;
-    if (!oauth || typeof oauth.accessToken !== 'string' || !oauth.accessToken) return null;
-    // expiresAt is unix seconds when Claude Code writes it.
-    if (Number.isFinite(oauth.expiresAt) && oauth.expiresAt * 1000 <= now) return { expired: true };
-    return { token: oauth.accessToken };
+    return credentialOf(JSON.parse(fs.readFileSync(file, 'utf8')).claudeAiOauth, now);
   } catch { return null; }
 }
 
@@ -59,10 +63,7 @@ function tokenFromKeychain(run = execFileSync, now = Date.now()) {
     const out = run('security', ['find-generic-password', '-s', 'Claude Code-credentials', '-w'], {
       encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'], timeout: KEYCHAIN_TIMEOUT_MS,
     });
-    const oauth = JSON.parse(out).claudeAiOauth;
-    if (!oauth || typeof oauth.accessToken !== 'string' || !oauth.accessToken) return null;
-    if (Number.isFinite(oauth.expiresAt) && oauth.expiresAt * 1000 <= now) return { expired: true };
-    return { token: oauth.accessToken };
+    return credentialOf(JSON.parse(out).claudeAiOauth, now);
   } catch {
     keychainFailUntil = now + KEYCHAIN_FAIL_COOLDOWN_MS;
     return null;

@@ -124,15 +124,24 @@ function windowFromUtilization(w) {
   return { pct, resetsAt: Number.isFinite(t) ? Math.round(t / 1000) : null };
 }
 
-function ingestUsagePayload(dir, payload, now = Date.now()) {
+// `at` is when the reading was taken. A shared file's reading can be older than what the hook has
+// stored since, so each window and the history point are written only when they are newer: an old
+// reading must neither replace a newer window nor trim newer history (recordHistory drops t > at).
+function ingestUsagePayload(dir, payload, at = Date.now()) {
   if (!payload || typeof payload !== 'object') return null;
   const snap = {
     fiveHour: windowFromUtilization(payload.five_hour),
     sevenDay: windowFromUtilization(payload.seven_day),
   };
   if (!snap.fiveHour && !snap.sevenDay) return null;
-  saveWindows(dir, snap, now);
-  recordHistory(dir, snap, now);
+  const saved = readWindows(dir);
+  const newer = (key) => (snap[key] && !(saved[key]?.seenAt >= at) ? snap[key] : null);
+  const windows = { fiveHour: newer('fiveHour'), sevenDay: newer('sevenDay') };
+  if (windows.fiveHour || windows.sevenDay) saveWindows(dir, windows, at);
+  // Points dated after the real clock are junk from a clock change; recordHistory drops those itself.
+  const clock = Date.now();
+  const latest = readHistory({ dir }).reduce((t, e) => (Number.isFinite(e?.t) && e.t <= clock && e.t > t ? e.t : t), -Infinity);
+  if (at > latest) recordHistory(dir, snap, at);
   return snap;
 }
 

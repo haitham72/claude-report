@@ -2,6 +2,10 @@
 
 All notable changes are listed here, newest first.
 
+## 0.12.4
+
+- Plan usage no longer loses newer status-line readings: reading an older shared usage file kept only readings up to that file's time, deleting newer points from the Metrics history and replacing the newer saved window. Login expiry is read in milliseconds, as Claude Code writes it, so an expired login is recognised before a request is sent. The sidebar no longer falls back to older plan numbers when the API answers before its scan finishes, and it builds its state once per refresh instead of twice.
+
 ## 0.12.3
 
 - Fixes plan-usage freezing after the first OAuth success: reading a fresh shared cache no longer rewrites the file (that reset its mtime and blocked further API calls, and could override a newer status-line hook reading). Invalid shared payloads are ignored. Failures other than success back off; expired tokens are detected; the sidebar no longer waits on the network before updating; macOS Keychain lookups time out.

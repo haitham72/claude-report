@@ -30,9 +30,13 @@ function loadWithFakeVscode({ extension = false, rejectAll = false } = {}) {
     ViewColumn: { Active: -1 },
     ThemeColor: class { constructor(id) { this.id = id; } }
   };
+  // The real plan-usage poll would read this machine's Claude Code login and call Anthropic.
+  const planUsage = { getUsage: (cb) => cb(null, 'disabled', { route: 'disabled' }), lastUsageRoute: () => 'disabled' };
   const orig = Module._load;
   Module._load = function (request, ...rest) {
-    return request === 'vscode' ? fake : orig.call(this, request, ...rest);
+    if (request === 'vscode') return fake;
+    if (request === './src/plan-usage') return planUsage;
+    return orig.call(this, request, ...rest);
   };
   const file = path.join(__dirname, '..', 'extension.js');
   delete require.cache[require.resolve(file)];

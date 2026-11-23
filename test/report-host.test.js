@@ -9,8 +9,9 @@ const path = require('node:path');
 const test = require('node:test');
 const { listReports, loadRun, saveRun } = require('../src/report-store');
 
-function loadHost(vscode, home, runClaude, workerResult = () => ({ projects: [] })) {
+function loadHost(vscode, home, runClaude, workerResult = () => ({ projects: [] }), overrides = {}) {
   const file = require.resolve('../extension');
+  delete require.cache[file];
   const load = Module._load;
   const previousHome = process.env.CLAUDE_REPORT_HOME;
   const previousConfig = process.env.CLAUDE_CONFIG_DIR;
@@ -28,6 +29,9 @@ function loadHost(vscode, home, runClaude, workerResult = () => ({ projects: [] 
     './src/live': { readLive: () => null, readHistory: () => [] },
     './src/sessions': { listSessions: () => [] },
     './src/transcript-live': { readTranscriptLive: () => null },
+    // The real poll would read this machine's Claude Code login and call Anthropic.
+    './src/plan-usage': { getUsage: (cb) => cb(null, 'disabled', { route: 'disabled' }), lastUsageRoute: () => 'disabled' },
+    ...overrides,
   };
   process.env.CLAUDE_REPORT_HOME = home;
   process.env.CLAUDE_CONFIG_DIR = path.join(home, '.claude');
@@ -217,4 +221,62 @@ test('the sidebar Manage action edits, compares, and enhances a selected saved p
   ]);
   await receive({ cmd: 'reportRange', mode: 'month' });
   assert.equal(posts.filter(({ type }) => type === 'state').at(-1).d.export.dateRange, null);
+});
+
+test('the sidebar posts at once and keeps a late plan-usage answer in every later post', async (t) => {
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), 'report-host-plan-'));
+  t.after(() => fs.rmSync(home, { recursive: true }));
+  const reading = (pct) => ({ fiveHour: { pct, resetsAt: null, seenAt: Date.now() }, sevenDay: null, updatedAt: Date.now(), stale: true });
+  let live = reading(10);
+  const pending = [];
+  // The API answers: the files now hold the new reading, and every waiting getUsage caller hears oauth-api.
+  const answer = (pct) => { live = reading(pct); pending.splice(0).forEach((cb) => cb(null, 'ok', { route: 'oauth-api' })); };
+  let openScan;
+  const scanHeld = new Promise((resolve) => { openScan = resolve; });
+  let provider, receive, disposeView;
+  const posts = [];
+  const vscode = {
+    window: { createStatusBarItem: () => ({ show() {}, hide() {} }), registerWebviewViewProvider: (_, value) => { provider = value; } },
+    commands: { registerCommand() {} },
+    workspace: { getConfiguration: () => ({ get: () => undefined }) },
+    StatusBarAlignment: { Left: 1, Right: 2 },
+    ThemeColor: class {}
+  };
+  const host = loadHost(vscode, home, async () => '', undefined, {
+    './src/live': { readLive: () => live, readHistory: () => [] },
+    './src/plan-usage': { getUsage: (cb) => { pending.push(cb); }, lastUsageRoute: () => 'none' },
+    worker_threads: { Worker: class extends EventEmitter {
+      constructor() { super(); scanHeld.then(() => this.emit('message', { projects: [] })); }
+    } },
+  });
+  host.activate({ subscriptions: [] });
+  provider.resolveWebviewView({
+    webview: { onDidReceiveMessage(fn) { receive = fn; }, postMessage: (message) => posts.push(message) },
+    onDidChangeVisibility() {}, onDidDispose(fn) { disposeView = fn; }
+  });
+  t.after(() => { disposeView(); host.deactivate(); });
+  const states = () => posts.filter(({ type }) => type === 'state').map(({ d }) => d);
+  const tick = () => new Promise(setImmediate);
+
+  // The scan is held, so the API answers while this push still waits for it.
+  const first = receive({ cmd: 'ready' });
+  await tick();
+  assert.equal(states().length, 1, 'posted before the scan and the API finish');
+  assert.equal(states()[0].live.fiveHour.pct, 10);
+  answer(42);
+  await tick();
+  assert.equal(states().at(-1).live.fiveHour.pct, 42);
+  openScan();
+  await first;
+  assert.equal(states().at(-1).live.fiveHour.pct, 42, 'the final post does not bring back the older reading');
+  assert.deepEqual(states().at(-1).reportProjects, []);
+
+  // The scan is cached now, so this push finishes first and the answer is posted on top of it.
+  await receive({ cmd: 'ready' });
+  const finished = states().length;
+  answer(77);
+  await tick();
+  assert.equal(states().length, finished + 1);
+  assert.equal(states().at(-1).live.fiveHour.pct, 77);
+  assert.deepEqual(states().at(-1).reportProjects, [], 'the scan results stay');
 });
