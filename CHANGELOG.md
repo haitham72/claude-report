@@ -2,7 +2,7 @@
 
 All notable changes are listed here, newest first.
 
-## 0.12.0
+## 0.12.1
 
 - Adds Antigravity and Cursor as activity sources next to Claude Code and Codex. Antigravity is read from `~/.gemini/antigravity/conversation_summaries.db` and Cursor from its `globalStorage` `state.vscdb`, both read-only. Antigravity gives sessions, the latest prompt per conversation, agent steps (counted as turns) and projects from the workspace folder. Cursor gives sessions (chats and agent runs), prompts, turns (assistant replies) and projects from the chat's workspace.
 - Antigravity shows no token counts, because it stores them in an undocumented format that is not decoded. Cursor token counts are summed when Cursor records them, but recent Cursor versions record none, so Cursor shows prompts and turns, not tokens. Subagent conversations (Antigravity) and sub-agent and best-of-N runs (Cursor) add turns but not sessions or prompts.
