@@ -32,9 +32,14 @@ h2{margin:0;font-size:12px;font-weight:700;letter-spacing:.07em;text-transform:u
 .kpi{padding:12px 14px}
 .kpi b{display:block;font-size:24px;line-height:1.15;font-variant-numeric:tabular-nums;letter-spacing:-.01em}
 .kpi span{display:block;color:var(--sec);font-size:12.5px}
-.ov-row{display:grid;grid-template-columns:104px 1fr;gap:4px 16px;padding:12px 16px;border-top:1px solid var(--line)}
-.ov-row:first-child{border-top:0}
+.ov-row{display:grid;grid-template-columns:104px 1fr;gap:4px 16px;padding:14px 16px;margin:10px;border-radius:10px;border:1px solid var(--line)}
 .ov-row dt{color:var(--sec);font-size:12.5px;font-weight:600}
+.ov-summary{background:linear-gradient(135deg,#eaf2ff,#f8fbff);border-color:#d3e3fb}.ov-summary dt{color:#2f5fb3}
+.ov-goal{background:linear-gradient(135deg,#f1ecff,#fbf9ff);border-color:#e0d6fa}.ov-goal dt{color:#6a46b8}
+.ov-achievement{background:linear-gradient(135deg,#e8f7ee,#f8fcf9);border-color:#cfeedb}.ov-achievement dt{color:#22794a}
+@media screen and (prefers-color-scheme:dark){:root:not([data-theme="light"]) .ov-summary{background:linear-gradient(135deg,#17233a,#18181b);border-color:#24365a}:root:not([data-theme="light"]) .ov-summary dt{color:#8fb6ff}:root:not([data-theme="light"]) .ov-goal{background:linear-gradient(135deg,#221a38,#18181b);border-color:#352a58}:root:not([data-theme="light"]) .ov-goal dt{color:#b9a2ff}:root:not([data-theme="light"]) .ov-achievement{background:linear-gradient(135deg,#142a1e,#18181b);border-color:#21452f}:root:not([data-theme="light"]) .ov-achievement dt{color:#7fd8a0}}
+@media screen{:root[data-theme="dark"] .ov-summary{background:linear-gradient(135deg,#17233a,#18181b);border-color:#24365a}:root[data-theme="dark"] .ov-summary dt{color:#8fb6ff}:root[data-theme="dark"] .ov-goal{background:linear-gradient(135deg,#221a38,#18181b);border-color:#352a58}:root[data-theme="dark"] .ov-goal dt{color:#b9a2ff}:root[data-theme="dark"] .ov-achievement{background:linear-gradient(135deg,#142a1e,#18181b);border-color:#21452f}:root[data-theme="dark"] .ov-achievement dt{color:#7fd8a0}}
+@media print{.ov-row{background:none!important;margin:6px 0}}
 .ov-row dd{margin:0;font-size:15px}
 .outcome{margin:6px 0 0;font-size:12.5px;color:var(--sec)}
 .notice{padding:10px 16px;font-size:13px;border-top:1px solid var(--line)}
@@ -275,9 +280,9 @@ section.block{margin-top:18px}
     var o = D.overview;
     html += '<section class="block" id="overview"><div class="title"><h2>Overview</h2></div><div class="card">';
     if (o) {
-      html += '<dl style="margin:0">' + [['Summary', o.summary], ['Goal', o.goal], ['Achievement', o.achievement]].map(function (row) {
+      html += '<dl style="margin:0;padding:2px 0">' + [['Summary', o.summary], ['Goal', o.goal], ['Achievement', o.achievement]].map(function (row) {
         var extra = row[0] === 'Achievement' && classified ? '<p class="outcome">Across ' + plural(examples, 'example') + ': ' + tally.verified + ' verified · ' + tally.recorded + ' recorded · ' + tally.requested + ' requested only</p>' : '';
-        return '<div class="ov-row"><dt>' + row[0] + '</dt><dd>' + esc(row[1] || '') + extra + '</dd></div>';
+        return '<div class="ov-row ov-' + row[0].toLowerCase() + '"><dt>' + row[0] + '</dt><dd>' + esc(row[1] || '') + extra + '</dd></div>';
       }).join('') + '</dl>';
     }
     if (D.overviewStale) html += '<div class="notice">Overview needs review after project changes.</div>';
