@@ -4,9 +4,9 @@ The full reference for [Claude Report](../README.md): setup, requirements, what 
 
 ## Install and start
 
-1. Search for **Claude Report** in the Extensions view, or install it from the [Visual Studio Marketplace](https://marketplace.visualstudio.com/items?itemName=haitham72.claude-report). Cursor, Windsurf, Antigravity, VSCodium and other editors that use [Open VSX](https://open-vsx.org/extension/haitham72/claude-report) find it in their Extensions view too. To install a file from the [latest release](https://github.com/haitham72/claude-report/releases/latest) instead, choose **Extensions → Install from VSIX…**, or run `code --install-extension claude-report-<version>.vsix`. Local builds are in `dist/`.
-2. Open **Claude Report** in the activity bar. **Sessions** shows Claude Code history. **Metrics** reads the last 30 days of activity from local transcripts.
-3. Optionally open **Connect** and install the Claude Code status line hook. This requires Node.js on your PATH. The hook keeps your previous status line and supports **Disconnect**.
+1. Search for **Claude Report** in the Extensions view (in Cursor, try `claude-report` with a hyphen), or install it from the [Visual Studio Marketplace](https://marketplace.visualstudio.com/items?itemName=haitham72.claude-report). Cursor, Windsurf, Antigravity, VSCodium and other editors that use [Open VSX](https://open-vsx.org/extension/haitham72/claude-report) find it in their Extensions view too. To install a file from the [latest release](https://github.com/haitham72/claude-report/releases/latest) instead, choose **Extensions → Install from VSIX…**, or run `code --install-extension claude-report-<version>.vsix`. Local builds are in `dist/`.
+2. Open **Claude Report** in the activity bar. **Sessions** shows Claude Code history. **Metrics** reads the last 30 days of activity from local transcripts. Plan usage (5-hour and weekly) fills from your Claude Code login automatically; turn off `claudeReport.planUsage.enabled` to stop those API calls.
+3. Optionally open **Connect** and install the Claude Code status line hook as another plan-usage source. This requires Node.js on your PATH. The hook keeps your previous status line and supports **Disconnect**.
 4. In **Report**, choose a month or custom date range, select your projects, choose **Quick** or **Deep**, and press **Create report**. Cloud generation requires the signed-in `claude` command. Local generation requires a model in LM Studio or Ollama.
 
 ## Requirements
@@ -15,7 +15,7 @@ The full reference for [Claude Report](../README.md): setup, requirements, what 
 | --- | --- |
 | Sessions, Metrics, model and context in the status bar | VS Code 1.75 or later, or a compatible editor, and Claude Code, Codex, Antigravity or Cursor activity on this computer |
 | Antigravity and Cursor tabs | SQLite support: Node's built-in `node:sqlite` in the editor's runtime, or else the system `node` (22.13 or later, or 24) on PATH. Without it, those tabs do not appear |
-| Plan usage gauges and trend | Node.js on your PATH, the **Connect** status line hook, and a Claude plan that reports usage windows (Pro, Max, Team or Ultra) |
+| Plan usage gauges and trend | A Claude.ai login in Claude Code (Pro, Max, Team or Ultra), or the optional **Connect** status-line hook with Node.js on PATH |
 | Cloud reports | The `claude` command, signed in |
 | Local reports | LM Studio or Ollama installed. The extension starts the server and loads a model if needed |
 | PDF export | Microsoft Edge, Google Chrome or Chromium |

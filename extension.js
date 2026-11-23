@@ -7,6 +7,7 @@ const path = require('path');
 const { execFileSync, spawnSync } = require('child_process');
 const { Worker } = require('worker_threads');
 const { readLive, SHARED_USAGE } = require('./src/live');
+const { getUsage, lastUsageRoute } = require('./src/plan-usage');
 const { SOURCES, labelOf, productList } = require('./src/sources');
 const { detectHost, defaultSource } = require('./src/host');
 const { readPlanHistory } = require('./src/plan-history');
@@ -123,8 +124,21 @@ function openReport(month, run = '') {
 
 // --- live numbers ------------------------------------------------------------
 
-// Model and context from transcripts (every IDE). The status line hook adds 5h and 7d usage
-// where Claude Code runs it, and wins while its reading is fresh.
+// Model and context from transcripts (every IDE). Plan 5h/7d come from several routes:
+// OAuth usage poll and shared cache (via plan-usage), status-line hook snapshots, and windows.json.
+// Newest reading wins inside readLive.
+function planUsageEnabled() {
+  try { return vscode.workspace.getConfiguration('claudeReport').get('planUsage.enabled') !== false; }
+  catch { return true; }
+}
+
+function refreshPlanUsageAsync() {
+  return new Promise((resolve) => {
+    if (!planUsageEnabled()) return resolve();
+    getUsage(() => resolve(), { historyDir: HOME_DIR, sharedFile: SHARED_USAGE, enabled: true });
+  });
+}
+
 function currentLive() {
   const cwd = workspaceCwd();
   return mergeLive({ hook: readLive({ cwd, dir: HOME_DIR, sharedFile: SHARED_USAGE }), transcript: readTranscriptLive({ cwd }) });
@@ -140,7 +154,7 @@ function log(message) {
 
 let lastShown = '';
 
-function refreshStatus(slots) {
+function paintStatus(slots) {
   let items;
   try {
     items = statusItems(currentLive(), COMMANDS);
@@ -161,20 +175,33 @@ function refreshStatus(slots) {
   });
 }
 
+// Tries memory → shared cache → OAuth API → stale cache. Sync routes paint immediately;
+// the OAuth route paints again when the response lands.
+function refreshStatus(slots) {
+  paintStatus(slots);
+  if (!planUsageEnabled()) return;
+  getUsage(() => paintStatus(slots), { historyDir: HOME_DIR, sharedFile: SHARED_USAGE, enabled: true });
+}
+
 // Writes the state of every live source to the Claude Report output panel and shows it.
 function diagnose() {
   const cwd = workspaceCwd();
-  const hook = readLive({ cwd, dir: HOME_DIR, sharedFile: SHARED_USAGE });
-  const transcript = readTranscriptLive({ cwd });
-  const merged = currentLive();
-  const items = statusItems(merged, COMMANDS);
-  log('--- diagnostics ---');
-  log(`workspace: ${cwd || 'none'}`);
-  log(`hook reading: ${hook ? JSON.stringify(hook) : 'none (the status line command has not run)'}`);
-  log(`transcript reading: ${transcript ? JSON.stringify(transcript) : 'none (no recent Claude Code session found)'}`);
-  log(`status bar would show: ${items.map((i) => i.text).join(' | ')}`);
-  log('If you still see nothing, right-click the status bar and check that Claude Report is ticked.');
-  if (channel) channel.show(true);
+  const enabled = planUsageEnabled();
+  getUsage((data, state, meta) => {
+    const hook = readLive({ cwd, dir: HOME_DIR, sharedFile: SHARED_USAGE });
+    const transcript = readTranscriptLive({ cwd });
+    const merged = currentLive();
+    const items = statusItems(merged, COMMANDS);
+    log('--- diagnostics ---');
+    log(`workspace: ${cwd || 'none'}`);
+    log(`plan usage setting: ${enabled ? 'on' : 'off'}`);
+    log(`plan usage route: ${meta && meta.route ? meta.route : lastUsageRoute()} (${state})${data ? ` five_hour=${data.five_hour && data.five_hour.utilization} seven_day=${data.seven_day && data.seven_day.utilization}` : ''}`);
+    log(`hook/shared reading: ${hook ? JSON.stringify(hook) : 'none (no status-line or shared usage yet)'}`);
+    log(`transcript reading: ${transcript ? JSON.stringify(transcript) : 'none (no recent Claude Code session found)'}`);
+    log(`status bar would show: ${items.map((i) => i.text).join(' | ')}`);
+    log('If you still see nothing, right-click the status bar and check that Claude Report is ticked.');
+    if (channel) channel.show(true);
+  }, { historyDir: HOME_DIR, sharedFile: SHARED_USAGE, enabled });
 }
 
 // The chained status line is a program that may have been uninstalled since.
@@ -590,6 +617,8 @@ class Panel {
 
   async push(force) {
     const request = ++this.stateRequest;
+    await refreshPlanUsageAsync();
+    if (request !== this.stateRequest) return;
     const base = this.state();
     if (this.lastScan?.monthLabel === base.monthLabel) Object.assign(base, this.lastScan);
     this.post({ type: 'state', d: { ...base } });

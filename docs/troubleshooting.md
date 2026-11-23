@@ -10,10 +10,11 @@ Start with **Claude Report: Diagnose Status Bar**. It prints what every live sou
 
 ## 5h and 7d are missing
 
-- They come only from Claude Code's status line command. Open **Connect** and make sure **Status line hook** says Connected.
-- Press **Test**. It runs the exact saved command and shows whether it ran, what it printed and whether it saved a reading.
-- They need a Pro, Max, Team or Ultra plan, and Claude Code only reports them after a session's first response. Sometimes it sends a reading without them. The last good values are kept until the window resets, and the tooltip says how old they are.
-- If **Last reading** never changes after you send a message in Claude Code, your Claude Code version or editor is not running status lines.
+- With `claudeReport.planUsage.enabled` on (default), Claude Report polls Anthropic’s usage API using your local Claude Code login — no Connect step. Run **Claude Report: Diagnose Status Bar** and check `plan usage route:` (`oauth-api`, `shared-fresh`, `memory`, or `notoken`).
+- `notoken` means Claude Code is not signed in with a Claude.ai login (API-key-only does not work for this path). Sign in with Claude Code, or use the status-line hook instead.
+- The status-line hook is a second route. Open **Connect** and make sure **Status line hook** says Connected, then press **Test**.
+- They need a Pro, Max, Team or Ultra plan. The last good values are kept until the window resets, and the tooltip says how old they are.
+- Turn the setting off if you do not want the extension to call Anthropic for plan gauges.
 
 ## Connect fails
 

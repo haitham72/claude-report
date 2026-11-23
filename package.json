@@ -2,7 +2,7 @@
   "name": "claude-report",
   "displayName": "Claude Report",
   "description": "Claude Code, Codex, Antigravity and Cursor activity in your editor: live Claude plan gauges, a Metrics view per agent, and monthly AI achievement reports per project. Reads local transcripts, no telemetry.",
-  "version": "0.12.1",
+  "version": "0.12.2",
   "publisher": "haitham72",
   "license": "MIT",
   "engines": {
@@ -125,6 +125,11 @@
           ],
           "default": "left",
           "description": "Which end of the status bar shows the gauges. Reload the window after changing it."
+        },
+        "claudeReport.planUsage.enabled": {
+          "type": "boolean",
+          "default": true,
+          "description": "Fetch Claude plan usage (5-hour and weekly) with your local Claude Code login, the same numbers as /usage. Off means only the status-line hook and any shared cache already on disk."
         },
         "claudeReport.export.save": {
           "type": "boolean",

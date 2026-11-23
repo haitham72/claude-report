@@ -1,10 +1,10 @@
 'use strict';
 
-// The status bar's numbers come from two places. The model and context are read from
-// transcripts, which every IDE writes. The status line hook, where Claude Code runs it,
-// is preferred while its reading is fresh (it knows the real window size) and is the
-// only source of 5h and 7d plan usage. Those two windows belong to the account, so they are
-// kept from the hook even when its model and context have gone stale.
+// The status bar's numbers come from several places. The model and context are read from
+// transcripts, which every IDE writes. 5h and 7d plan usage come from the OAuth usage poll /
+// shared cache and from the status-line hook (newest wins in readLive). The hook reading is
+// preferred for model/context while fresh. Account windows stay available even when the
+// session snapshot has gone stale.
 function mergeLive({ hook, transcript }) {
   const fresh = hook && !hook.stale ? hook : null;
   const base = fresh || transcript || hook || null;

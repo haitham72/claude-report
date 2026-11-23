@@ -9,10 +9,33 @@ Claude Report is plain Node with no runtime dependencies and no bundler. This pa
 | Sessions list | `~/.claude/projects/*/*.jsonl` (the title is the latest `ai-title` record, else the first prompt) and `~/.claude/sessions/*.json` (a session is running when its process is alive) |
 | Metrics, daily chart | Claude Code JSONL transcripts and Codex rollouts. Supported token counts, user prompts, models and tool data come from timestamped records |
 | Model and context in the status bar | The newest transcript for the open folder: the last assistant turn's model and its prompt size over a 200k window (1M once a turn exceeds it). This is a heuristic |
-| 5h and 7d usage | The status line command (`bin/hook.js`). Claude Code supplies `rate_limits`. `src/live.js` keeps timestamped samples and resets for the Metrics charts |
+| 5h and 7d usage | Several routes, newest wins: OAuth plan-usage poll (`src/plan-usage.js`, same as `/usage`), shared temp cache, and the status-line hook (`bin/hook.js`). `src/live.js` keeps timestamped samples and resets for the Metrics charts |
 | Report text | Your own `claude` command, or a local model |
 
 Scanning and rendering use local files. Cloud generation delegates to the signed-in Claude Code CLI. Local generation sends requests to the selected localhost model server.
+
+## Plan usage routes
+
+```mermaid
+flowchart LR
+  tick[Status bar / Metrics refresh] --> PU[plan-usage.getUsage]
+  PU --> mem[Memory TTL]
+  PU --> shared[Shared temp cache]
+  PU --> api[Anthropic OAuth usage API]
+  PU --> stale[Stale shared / last good]
+  api --> shared
+  mem --> L["~/.claude-report windows + history"]
+  shared --> L
+  api --> L
+  stale --> L
+  CC[Claude Code status line] --> H[hook.js]
+  H --> L
+  L --> SB[Status bar and Metrics gauges]
+```
+
+- **Default on.** Setting `claudeReport.planUsage.enabled` controls the OAuth poll. No prompt: it reuses the Claude Code login already on the machine, like Claude Control.
+- Routes are tried in order: fresh memory → fresh shared cache → OAuth API (if a token exists) → stale shared/last good. The status-line hook remains a parallel writer into the same store.
+- API-key-only Claude Code logins have no OAuth token; gauges then need the hook or another tool writing the shared cache.
 
 ## The status line hook
 
@@ -68,7 +91,7 @@ flowchart TD
 | `src/deep-review.js`, `src/deep-stages.js`, `src/deep-git.js` | Prompt evidence, context budgeting, source fingerprints, and independent project reviews |
 | `src/report-store.js`, `src/report-management.js` | Saved runs, revisions, evidence and export history |
 | `src/local-models.js` | Detecting LM Studio and Ollama, GPU memory, context limits |
-| `src/transcript-live.js`, `live.js`, `live-merge.js`, `statusbar.js` | Live numbers and the status bar items |
+| `src/transcript-live.js`, `live.js`, `live-merge.js`, `plan-usage.js`, `statusbar.js` | Live numbers, plan-usage poll and the status bar items |
 | `src/install.js`, `atomic.js`, `bin/hook.js` | Installing the hook, safe file writes, the hook itself |
 | `src/export.js`, `mail.js` | PDF, saving, Outlook draft |
 | `design/` | Preview builders and sample data for screenshots |

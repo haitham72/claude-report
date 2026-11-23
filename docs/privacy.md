@@ -13,6 +13,8 @@ Claude Report is built to work on your computer. This page lists exactly what it
 | `~/.claude/sessions/*.json` | Which sessions are running |
 | `~/.claude/settings.json` | Whether the hook is connected, and its previous status line |
 | `~/.claude/cursor-claude-control/usage-history.json` when present | Reads timestamps and plan usage percentages for Metrics. The source file is read-only |
+| `~/.claude/.credentials.json` or the macOS Keychain entry `Claude Code-credentials` | Local Claude Code login token, used only to call Anthropic’s plan-usage API (same as `/usage`). Never logged or copied elsewhere. Off via `claudeReport.planUsage.enabled` |
+| `%TEMP%/claude_oauth_usage.json` (or `$TMPDIR`) when present | Shared plan-usage cache written by Claude Code status tools, Claude Control, or this extension |
 | `~/.claude.json` | Only the part of your account email before the `@`, to show a username on a report. The address itself is never stored or sent |
 | `nvidia-smi` output | GPU name and memory, to estimate local model limits |
 | `localhost:1234` and `localhost:11434` | Only when you choose Local: the model list from LM Studio or Ollama |
@@ -23,7 +25,8 @@ Report evidence comes from prompts, activity counts, Git commit metadata and tim
 
 Claude Report keeps its working files under `~/.claude-report/`.
 
-- `live/`, `windows.json`, `usage-history.json`: model, context, plan usage and working folder from the status line. The trend history stores timestamps, plan percentages and reset times for up to eight days. No prompts.
+- `live/`, `windows.json`, `usage-history.json`: model, context, plan usage and working folder from the status line and/or the plan-usage poll. The trend history stores timestamps, plan percentages and reset times for up to eight days. No prompts.
+- `%TEMP%/claude_oauth_usage.json` (or `$TMPDIR`): last plan-usage payload shared with other local status tools. Utilization numbers only.
 - `config.json`: your previous status line command, kept so it can be restored.
 - `prefs.json` keeps your Cloud or Local choice, engine, model and any previously entered time evidence. New time entries are saved with the report example.
 - `runtime/`: a copy of the hook script.
@@ -43,7 +46,9 @@ Model requests are made when you confirm **Create report**, **Enhance report** o
 
 When an overview is generated, its input contains the project summaries and activity coverage across the period. Enhancement uses the saved sample where available. For an older run, it can rebuild evidence from activity still available for the original report period.
 
-Nothing is sent when you open the sidebar, browse sessions or look at metrics. There is no telemetry, no analytics and no account.
+**Plan usage** (Metrics gauges and status-bar 5h/7d), when `claudeReport.planUsage.enabled` is on (the default), sends your existing Claude Code login token to `api.anthropic.com/api/oauth/usage` over HTTPS — the same endpoint `/usage` uses. The token is read locally and never stored by Claude Report. Turn the setting off to stop those requests; gauges then rely only on the status-line hook and any shared cache already on disk. API-key-only logins have no OAuth token, so this path stays empty.
+
+Nothing else is sent when you open the sidebar, browse sessions or look at metrics. There is no telemetry, no analytics and no Claude Report account.
 
 ## What is removed before sending
 

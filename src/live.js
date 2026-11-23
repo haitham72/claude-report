@@ -114,6 +114,27 @@ function recordHistory(dir, snap, now) {
   } catch { /* history is best effort */ }
 }
 
+// Plan usage from Anthropic's /usage shape (utilization + resets_at ISO). Updates windows and history
+// so OAuth polling and the status-line hook share one store.
+function windowFromUtilization(w) {
+  const pct = num(w && w.utilization);
+  if (pct === null || pct < 0 || pct > 100) return null;
+  const t = Date.parse(w && w.resets_at);
+  return { pct, resetsAt: Number.isFinite(t) ? Math.round(t / 1000) : null };
+}
+
+function ingestUsagePayload(dir, payload, now = Date.now()) {
+  if (!payload || typeof payload !== 'object') return null;
+  const snap = {
+    fiveHour: windowFromUtilization(payload.five_hour),
+    sevenDay: windowFromUtilization(payload.seven_day),
+  };
+  if (!snap.fiveHour && !snap.sevenDay) return null;
+  saveWindows(dir, snap, now);
+  recordHistory(dir, snap, now);
+  return snap;
+}
+
 function prune(live) {
   try {
     for (const f of fs.readdirSync(live)) {
@@ -190,4 +211,7 @@ function readLive({ dir = DEFAULT_DIR, now = Date.now(), maxAgeMs = 6 * 3600 * 1
   };
 }
 
-module.exports = { homeDir, DEFAULT_DIR, SHARED_USAGE, writeLive, readLive, readHistory, readSharedUsage };
+module.exports = {
+  homeDir, DEFAULT_DIR, SHARED_USAGE, SHARED_MAX_AGE_MS,
+  writeLive, readLive, readHistory, readSharedUsage, ingestUsagePayload, windowFromUtilization,
+};

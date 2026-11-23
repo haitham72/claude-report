@@ -151,7 +151,7 @@ cs tab. Ported in structure from claude-control (MIT, lucasdonordeste). */
         '%;background:' + usageColor(pct) + '"></span></span><strong style="color:' + usageColor(pct) + '">' + Math.round(pct) + '%</strong>' + reset + '</div>';
       forecast += burnLine(spec.label, burn(history, spec, reading, now));
     });
-    return scope('Plan usage', 'Claude status line') + '<div class="plan-panel">' + gauges + '</div>' + scope('Burn rate', 'Estimate') +
+    return scope('Plan usage', 'Claude plan') + '<div class="plan-panel">' + gauges + '</div>' + scope('Burn rate', 'Estimate') +
       '<div class="plan-panel">' + (forecast || '<div class="spark-empty">Available after a short period of activity.</div>') + '</div>';
   }
 

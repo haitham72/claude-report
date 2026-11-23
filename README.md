@@ -41,7 +41,7 @@ Antigravity and Cursor need SQLite support: the editor's built-in `node:sqlite`,
 
 1. Install **Claude Report** from the Extensions view.
 2. Open **Claude Report** in the activity bar to see Sessions and Metrics.
-3. Optional: open **Connect** to add the status line hook for live plan gauges. It needs Node.js.
+3. Plan gauges use your Claude Code login automatically. Optional: open **Connect** to add the status-line hook as another source (needs Node.js).
 4. In **Report**, pick a month and your projects, then press **Create report**.
 
 [Full guide](docs/guide.md) · [Privacy](docs/privacy.md) · [Troubleshooting](docs/troubleshooting.md) · [Changelog](CHANGELOG.md)

@@ -2,6 +2,10 @@
 
 All notable changes are listed here, newest first.
 
+## 0.12.2
+
+- Plan usage (5-hour and weekly) polls Anthropic’s usage API with the local Claude Code login, the same numbers as `/usage`, without requiring Connect. Routes are tried in order: memory, shared temp cache, OAuth API, then stale cache; the status-line hook remains another writer into the same store. Setting `claudeReport.planUsage.enabled` turns the poll off.
+
 ## 0.12.1
 
 - Adds Antigravity and Cursor as activity sources next to Claude Code and Codex. Antigravity is read from `~/.gemini/antigravity/conversation_summaries.db` and Cursor from its `globalStorage` `state.vscdb`, both read-only. Antigravity gives sessions, the latest prompt per conversation, agent steps (counted as turns) and projects from the workspace folder. Cursor gives sessions (chats and agent runs), prompts, turns (assistant replies) and projects from the chat's workspace.
