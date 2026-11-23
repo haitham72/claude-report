@@ -275,7 +275,7 @@ test('an old Companio hook shows an Update the hook row', () => {
   const s = boot();
   s.msg({ type: 'state', d: { ...state, connected: true, hookLegacy: true } });
   s.click({ tab: 'connect' });
-  assert.ok(s.app.innerHTML.includes('Hook copy'));
+  assert.ok(s.app.innerHTML.includes('Status hook'));
 });
 
 test('a session click sends its title so the terminal can be named, and a gone status line can be removed', () => {

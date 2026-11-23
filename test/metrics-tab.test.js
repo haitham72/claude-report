@@ -28,7 +28,7 @@ const D = { openProject: 'alpha', days, windowDays: 30, live: null, history: his
 test('renders every section label and the footnote', () => {
   const html = M.render(D, { openOnly: false });
   ['Plan usage', 'Burn rate', 'Trend', '5-hour limit', 'Tokens', 'Only the open project', 'Cache efficiency', 'Tools',
-    'When you work', 'By model', 'By project', 'Counted locally from your transcripts'].forEach((s) =>
+    'When you work', 'By model', 'By project', 'Counted locally'].forEach((s) =>
     assert.ok(html.includes(s), s));
   assert.ok(html.includes('busiest at 10h'));
   assert.ok(html.includes('var(--c'));
@@ -54,7 +54,7 @@ test('plan usage shows the current percentage and reset countdown without extrap
   const short = [{ t: now - 5315, s: 0, sr: reset }];
   const html = M.render({ now, live, history: short });
   assert.match(html, />1%<.*>2h 0m</);
-  assert.match(html, /Needs 15 minutes of readings/);
+  assert.match(html, /Available after a short period of activity/);
   assert.doesNotMatch(html, /%\/h|Full in/);
   const enough = [{ t: now - hour / 2, s: 0, sSource: 'control' }, ...short];
   const forecast = M.render({ now, live, history: enough });

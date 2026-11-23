@@ -11,13 +11,13 @@ function loadWithFakeVscode({ extension = false, rejectAll = false } = {}) {
   process.env.CLAUDE_REPORT_HOME = require('fs').mkdtempSync(path.join(require('os').tmpdir(), 'wire-'));
   // ...and away from the real ~/.claude/settings.json: activate may repoint a connected status line.
   process.env.CLAUDE_CONFIG_DIR = require('fs').mkdtempSync(path.join(require('os').tmpdir(), 'wire-cfg-'));
-  const calls = { commands: [], views: [], statusItems: [], executed: [], terminals: [], errors: [] };
+  const calls = { commands: [], views: [], statusItems: [], executed: [], terminals: [], errors: [], infos: [] };
   const fake = {
     window: {
       createStatusBarItem: () => { const i = { show() {}, hide() {}, dispose() {} }; calls.statusItems.push(i); return i; },
       createOutputChannel: () => ({ appendLine() {}, show() {} }),
       registerWebviewViewProvider: (id) => { calls.views.push(id); return { dispose() {} }; },
-      showInformationMessage() {}, showWarningMessage() {}, showErrorMessage: (m) => { calls.errors.push(m); },
+      showInformationMessage: (m) => { calls.infos.push(m); }, showWarningMessage() {}, showErrorMessage: (m) => { calls.errors.push(m); },
       createTerminal: () => { const term = { sent: [], show() {}, sendText(s) { term.sent.push(s); } }; calls.terminals.push(term); return term; },
       withProgress: (_o, fn) => fn({ report() {} }),
       createWebviewPanel: () => ({ webview: {} })
@@ -73,7 +73,7 @@ test('with the extension installed but failing, it tries its other commands and 
   await ext._sessions.newSession();
   assert.deepStrictEqual(calls.executed, ['claude-vscode.primaryEditor.open', 'claude-vscode.editor.open', 'claude-vscode.sidebar.open']);
   assert.strictEqual(calls.terminals.length, 0);
-  assert.strictEqual(calls.errors.length, 1);
+  assert.strictEqual(calls.infos.length, 1);
 });
 
 test('without the extension, New session starts the CLI in a terminal', async () => {

@@ -81,19 +81,19 @@ test('the sidebar Manage action edits, compares, and enhances a selected saved p
         assert.equal(value, 'Original Alpha summary');
         return 'My edited summary';
       },
-      async showWarningMessage(message, { detail }, action) {
+      async showInformationMessage(message, opts, action) {
+        const detail = opts && opts.detail;
         if (/^Create the /.test(message)) return action;
-        if (message === 'Run separate Deep prompting review?') {
-          assert.match(detail, /Alpha · 1 messages/);
-          assert.match(detail, /Beta · 1 messages/);
-          assert.match(detail, /Project reviewer: haiku.*Final synthesis: opus/);
+        if (message === 'Run a Deep prompting review?') {
+          assert.match(detail, /depth · [0-9]+ model requests?./);
           return action;
         }
         assert.equal(message, 'Enhance this saved report?');
-        assert.match(detail, /Projects: Alpha\n/);
-        assert.match(detail, /through Claude Code/);
+        assert.match(detail, /[0-9]+ projects?/);
+        assert.match(detail, /through your Claude Code/);
         return action;
       },
+      showWarningMessage() {},
       showErrorMessage: (message) => errors.push(message)
     },
     commands: {

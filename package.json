@@ -77,6 +77,11 @@
     "configuration": {
       "title": "Claude Report",
       "properties": {
+        "claudeReport.reportName": {
+          "type": "string",
+          "default": "",
+          "description": "Name shown on reports and in report file names. Empty uses the part of your Claude account email before the @."
+        },
         "claudeReport.reportModel": {
           "type": "string",
           "enum": [

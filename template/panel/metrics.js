@@ -152,7 +152,7 @@ cs tab. Ported in structure from claude-control (MIT, lucasdonordeste). */
       forecast += burnLine(spec.label, burn(history, spec, reading, now));
     });
     return scope('Plan usage', 'Claude status line') + '<div class="plan-panel">' + gauges + '</div>' + scope('Burn rate', 'Estimate') +
-      '<div class="plan-panel">' + (forecast || '<div class="spark-empty">Needs 15 minutes of readings in the current rotation.</div>') + '</div>';
+      '<div class="plan-panel">' + (forecast || '<div class="spark-empty">Available after a short period of activity.</div>') + '</div>';
   }
 
   function colors(names) {
@@ -231,8 +231,7 @@ cs tab. Ported in structure from claude-control (MIT, lucasdonordeste). */
       '<div class="cache-t"><div class="cache-h">Cache efficiency</div>' +
       '<div class="cache-d">Share of the prompt replayed from cache instead of re-sent. Higher means longer sessions cost far less.</div>' +
       '<div class="cache-n">' + esc(kfmt(cRead)) + ' read · ' + esc(kfmt(cWrite)) + ' written</div></div></div>' +
-      '<div class="usenote">' + esc(kfmt(cold) + ' cold restarts · ' + kfmt(rebuilt) + ' tokens rebuilt · ' + kfmt(idle) + ' after 5+ min idle') +
-      '<br>A cold restart sends the whole conversation again at full price.</div>';
+      (cold > 0 ? '<div class="usenote">' + esc(kfmt(cold) + (cold === 1 ? ' cache reset' : ' cache resets') + (idle > 0 ? ', ' + kfmt(idle) + ' after idle pauses.' : '.')) + '</div>' : '');
 
     // Daily columns
     if (days.length) {
@@ -287,7 +286,7 @@ cs tab. Ported in structure from claude-control (MIT, lucasdonordeste). */
     }).sort(function (a, b) { return b.value - a.value; }).slice(0, 8);
     if (pl.length) h += scope('By project') + rows(pl);
 
-    h += '<div class="usenote">Counted locally from your transcripts. Metrics cover Claude Code, Codex, Antigravity and Cursor activity. Antigravity and recent Cursor logs carry no token counts.</div>';
+    h += '<div class="usenote">Counted locally; Antigravity and recent Cursor logs do not record tokens.</div>';
     return h;
   }
 

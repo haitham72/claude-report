@@ -11,14 +11,17 @@ const raw = {
   habit: { text: 'Say what you already tried.', topic: 'iteration' }
 };
 
-test('advice needs all three parts, evidence on the first two, and a known topic', () => {
+test('advice needs all three parts and evidence on the first two; a missing or unknown topic is inferred from the fixed table', () => {
   const a = parseAdvice(raw, { prompts: 40 });
   assert.strictEqual(a.strength.text, 'Goals come first.');
   assert.strictEqual(a.watch.topic, 'context');
   assert.strictEqual(a.firstLook, false);
   assert.strictEqual(parseAdvice({ ...raw, habit: undefined }), undefined);
   assert.strictEqual(parseAdvice({ ...raw, strength: { text: 'Good.' } }), undefined);
-  assert.strictEqual(parseAdvice({ ...raw, watch: { ...raw.watch, topic: 'vibes' } }), undefined);
+  const guessed = parseAdvice({ ...raw, watch: { ...raw.watch, topic: 'vibes' }, habit: { text: 'Ask for a test run before closing.' } });
+  assert.ok(Object.keys(TOPICS).includes(guessed.watch.topic), 'never the model\'s own topic');
+  assert.strictEqual(guessed.habit.topic, 'verification');
+  assert.ok(guessed.links.every((link) => Object.values(TOPICS).includes(link)), 'links only from the fixed table');
   assert.strictEqual(parseAdvice('no'), undefined);
 });
 
@@ -55,7 +58,7 @@ test('the advice request is sent only when there is prompting evidence', async (
   await generateOverview({ entry: { projects: [{ name: 'a', promptCount: 4 }] }, run });
   assert.ok(!seen.includes(ADVICE_REQUEST.trim()));
   await generateOverview({ entry: { projects: [{ name: 'a', promptCount: 4, promptNote: 'Short asks.' }] }, run });
-  assert.ok(seen.includes('Also return advice'));
+  assert.ok(seen.includes('also return an "advice" key'));
   await generateOverview({ entry: { projects: [], promptingReviews: [{ project: 'a' }] }, run });
-  assert.ok(seen.includes('Also return advice'));
+  assert.ok(seen.includes('also return an "advice" key'));
 });

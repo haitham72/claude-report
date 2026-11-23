@@ -198,7 +198,7 @@ function dropChain() {
   try {
     const file = path.join(HOME_DIR, 'config.json');
     writeFileAtomic(file, JSON.stringify({ chain: null }, null, 2) + '\n');
-    vscode.window.showInformationMessage('Removed. The status line now shows only the Claude Report line.');
+    vscode.window.showInformationMessage('Previous status line removed.');
   } catch (e) {
     vscode.window.showErrorMessage(`Claude Report: ${e.message}`);
   }
@@ -227,7 +227,7 @@ async function openEngine(engine) {
   const name = engineName(engine);
   const ok = await vscode.window.withProgress({ location: vscode.ProgressLocation.Notification, title: `Opening ${name}…` },
     () => startEngine(engine));
-  if (!ok) vscode.window.showWarningMessage(`${name} did not respond. Open it yourself and start its local server, then try again.`);
+  if (!ok) vscode.window.showInformationMessage(`Could not reach ${name}; open it, start its local server, and try again.`);
   return ok;
 }
 
@@ -239,7 +239,7 @@ async function resolveLocal(cfg, signal, { ask = true } = {}) {
   while (!engineRunning(state, cfg.engine)) {
     const name = engineName(cfg.engine);
     const open = `Open ${name}`;
-    const choice = await vscode.window.showWarningMessage(`${name} is not running. Local reports need it open, or switch the Report tab to Cloud.`,
+    const choice = await vscode.window.showInformationMessage(`${name} is not open yet.`,
       { modal: true }, open, 'Recheck');
     if (choice === open) await openEngine(cfg.engine);
     else if (choice !== 'Recheck') throw new Error('cancelled');
@@ -313,7 +313,7 @@ async function resumeSession(id, cwd, title) {
   const target = resumeTarget({ here: workspaceCwd(), cwd });
   if (target.via === 'panel' && claudeExtension()) {
     if (await openInClaudeExtension(['claude-vscode.primaryEditor.open'], id)) return;
-    vscode.window.showErrorMessage('The Claude Code extension did not open that session. Open it from the Claude Code panel.');
+    vscode.window.showInformationMessage('Open this session from the Claude Code panel instead.');
     return;
   }
   if (target.missing) vscode.window.showWarningMessage('The folder this session ran in no longer exists, so it may not be found from here.');
@@ -326,7 +326,7 @@ async function newSession() {
     // newConversation only tells an already open Claude Code panel to start over, so on its own it does nothing when no
     // panel is open. primaryEditor.open always creates a fresh conversation (it is what the extension's own link handler calls).
     const opened = await openInClaudeExtension(['claude-vscode.primaryEditor.open', 'claude-vscode.editor.open', 'claude-vscode.sidebar.open']);
-    if (!opened) vscode.window.showErrorMessage('The Claude Code extension did not open a new session. Start one from the Claude Code panel.');
+    if (!opened) vscode.window.showInformationMessage('Start a new session from the Claude Code panel instead.');
     return;
   }
   claudeTerminal(workspaceCwd(), 'claude');
@@ -431,12 +431,12 @@ async function exportSavedReport(month, run, manual) {
 
   if (res.saved) {
     try { recordReportExport(HOME_DIR, month, run, res.saved); }
-    catch (error) { vscode.window.showWarningMessage('The report was exported, but its history could not be updated: ' + error.message); }
+    catch (error) { log('export history not updated: ' + error.message); vscode.window.showWarningMessage('Report exported, but it could not be added to your export list.'); }
     void vscode.window.showInformationMessage(`Saved a copy to ${res.saved}`, 'Show in folder').then((choice) => {
       if (choice) return vscode.commands.executeCommand('revealFileInOS', vscode.Uri.file(res.saved));
     });
   } else if (options.save) {
-    vscode.window.showWarningMessage('Claude Report could not save an exported copy. See the Claude Report output for details.');
+    void vscode.window.showWarningMessage('Could not save a copy of the report.', 'Show log').then((choice) => { if (choice && channel) channel.show(true); });
   }
   if (options.outlook && res.mail && res.mail.ok === false) {
     // Outlook could not attach by itself: open a plain draft and show the file to drag in.
@@ -444,7 +444,7 @@ async function exportSavedReport(month, run, manual) {
     const body = options.body ? buildMessage({ template: options.body, month, label: data.label, user: data.user, overview: data.overview }) : defaultBody({ label: data.label, user: data.user, overview: data.overview });
     vscode.env.openExternal(vscode.Uri.parse(mailtoUrl({ to: options.to, subject, body })));
     vscode.commands.executeCommand('revealFileInOS', vscode.Uri.file(res.attachment));
-    vscode.window.showWarningMessage('Outlook could not attach the report by itself. A draft is open and the file is selected in your file manager: drag it into the email.');
+    vscode.window.showInformationMessage('Email draft opened; drag the selected file in to attach it.');
   }
 }
 
@@ -643,7 +643,7 @@ function resolveNode() {
 async function installHook(context) {
   const nodePath = resolveNode();
   if (!nodePath) {
-    vscode.window.showErrorMessage('Claude Report needs Node.js on your PATH to read Claude Code status. Install Node and try again.');
+    vscode.window.showErrorMessage('Node.js is required to connect Claude Code; install it and try again.');
     return;
   }
   let settings = {};
@@ -654,15 +654,17 @@ async function installHook(context) {
     // settings.json can point at us while the runtime copy is gone; Connect must still repair it.
     try {
       installRuntime(context.extensionPath, HOME_DIR);
-      vscode.window.showInformationMessage('Claude Code is already connected. Hook files refreshed.');
+      vscode.window.showInformationMessage('Claude Code is already connected.');
     } catch (e) {
-      vscode.window.showErrorMessage(`Claude Report: could not write ${RUNTIME_HOOK}: ${e.message}`);
+      log(`could not write ${RUNTIME_HOOK}: ${e.message}`);
+      vscode.window.showErrorMessage('Could not update the Claude Code hook files.');
     }
     return;
   }
 
-  const ok = await vscode.window.showWarningMessage(
-    `Connect Claude Code?\n\n${plan.changes.join('\n')}\n\nA backup of settings.json is kept next to it.`,
+  log('connect: ' + plan.changes.join('; '));
+  const ok = await vscode.window.showInformationMessage(
+    'Connect Claude Code to show live plan usage? Your settings are backed up first.',
     { modal: true }, 'Connect');
   if (ok !== 'Connect') return;
   try {
@@ -677,7 +679,7 @@ async function installHook(context) {
 async function uninstallHook() {
   try {
     const res = applyUninstall({ settingsPath: CLAUDE_SETTINGS, configDir: HOME_DIR });
-    vscode.window.showInformationMessage(res && res.note ? res.note : 'Disconnected. Your previous status line is restored.');
+    vscode.window.showInformationMessage(res && res.note ? "Claude Code wasn't connected to Claude Report." : 'Disconnected. Your previous status line is back.');
   } catch (e) {
     vscode.window.showErrorMessage(`Claude Report: ${e.message}`);
   }
@@ -827,7 +829,7 @@ async function writeReport(panel, keys, runtime, { dateRange, estimateTime, dept
   const scanDuration = Math.max(0, Date.now() - scanStarted);
   let eligible = labelProjects(scan.projects).filter((p) => p.promptCount >= MIN_PROMPTS);
   if (!eligible.length) {
-    vscode.window.showInformationMessage('No project has enough prompts in the selected dates for a report.');
+    vscode.window.showInformationMessage('Not enough prompts in the selected dates.');
     return;
   }
   if (keys) {
@@ -848,15 +850,10 @@ async function writeReport(panel, keys, runtime, { dateRange, estimateTime, dept
   const settings = localConfig();
   const local = settings.enabled ? settings : null;
   const models = defaultModels();
-  const sources = productList(['claude', ...eligible.flatMap((p) => p.prompts.map((prompt) => prompt.source)).filter(Boolean)]);
-  const route = local
-    ? 'Project summaries and the overview run in ' + (local.engine === 'ollama' ? 'Ollama' : 'LM Studio') + ' on this computer.'
-    : 'Claude Code uses ' + models.project.model + ' for project cards. ' + (depth === 'deep'
-      ? (models.project.model || 'Haiku') + ' will write up to ' + eligible.length + ' project cards now (plus an optional expansion pass for thin drafts). Next, one Deep review per project runs at ' + deepEffort + ' depth only, and ' + (models.overview.model || 'Sonnet') + ' writes the final overview in one request.'
-      : models.overview.model + ' will write the overview.') + ' This uses your Claude plan and sends redacted prompts and commit summaries.';
-  const ok = await vscode.window.showWarningMessage(
-    'Create the ' + label + ' report for ' + eligible.length + (eligible.length === 1 ? ' project?' : ' projects?') + '\n\nActivity sources: ' + sources + ' and available Git history. A redacted evidence sample is stored locally with this run for enhancement.\n\n' + route,
-    { modal: true }, 'Create');
+  const where = local ? 'on this computer with ' + engineName(local.engine) : 'with Claude Code';
+  const ok = await vscode.window.showInformationMessage(
+    'Create the ' + label + ' report for ' + eligible.length + (eligible.length === 1 ? ' project ' : ' projects ') + where + '?',
+    local ? { modal: true } : { modal: true, detail: 'Redacted prompts are sent through your Claude Code.' }, 'Create');
   if (ok !== 'Create') return;
 
   vscode.commands.executeCommand('workbench.view.extension.claudeReport');
@@ -869,7 +866,8 @@ async function writeReport(panel, keys, runtime, { dateRange, estimateTime, dept
   const result = await runProjectReports(projects, { local, models, estimateTime }, runtime);
   if (!Object.keys(result.reports).length) throw new Error('Every project failed. See the project rows and runtime log for details.');
 
-  const user = accountUsername();
+  // The name on the report: the Report name setting, else the Claude account's email name.
+  const user = String(vscode.workspace.getConfiguration('claudeReport').get('reportName') || '').trim() || accountUsername();
   if (!dateRange) applyTimeEvidence(result.reports, timeEntries(month, projects, scan.projects));
   const overview = depth === 'deep' ? null : await writeOverview({ user, month, projects, result, runtime, dateRange });
   if (depth !== 'deep' && !overview) vscode.window.showWarningMessage('The report was saved without the overview cards.');
@@ -896,7 +894,7 @@ function saveGeneratedReport(panel, data, result, runtime, metadata, evidence) {
   });
   const partial = Boolean(data.failures?.length);
   runtime.stage('done', partial ? 'Partial report saved' : metadata.pendingOverview ? 'Project drafts saved' : 'Report ready', { month: data.month, run, partial });
-  if (partial) vscode.window.showWarningMessage('Partial report saved. See the project rows for failure reasons.');
+  if (partial) vscode.window.showWarningMessage('Report saved, though some projects could not be included.');
   void panel.push(false);
   return run;
 }
@@ -1002,24 +1000,9 @@ async function deepReport(panel, month, parentRun, record, options = {}) {
         reused: Boolean(cached), diffExcerpts: details.diffExcerpts };
     });
     let prepared = makePlan();
-    const route = target ? target.engine + ' on this computer' : 'Claude Code Cloud';
-    const requestsText = () => {
-      const { review } = plannedRequests(summarizePlan(prepared));
-      return 'Requests for this run: ' + review + ' project review ' + (review === 1 ? 'request' : 'requests') + ' at ' + effort +
-        ' depth only, then 1 final synthesis. Other depths do not run. Cloud runs at most ' + DEEP_CONCURRENCY + ' at a time.';
-    };
-    const preflight = [
-      'Review depth ' + effort + ' · ' + DEEP_SCOPE[effort],
-      requestsText(),
-      'Project reviewer: ' + model.model + ' via ' + route + '. Final synthesis: ' + finalModel.model + '.',
-      'Context: ' + context.toLocaleString() + ' tokens' + (target?.loadedContext ? ' (loaded)' : ' (planned)') +
-        '. Preflight counts are estimates. Messages stay verbatim after redaction and larger projects split by session only when needed.',
-      'Each project gets the selected evidence together. Matching cached reviews are reused.',
-      !local && effort !== 'low' ? 'Cloud will receive the listed evidence, including project documentation excerpts' +
-        (effort === 'high' ? ' and redacted excerpts of changed source lines.' : '.') : '',
-      describe(summarizePlan(prepared))
-    ].filter(Boolean).join('\n\n');
-    const ok = await vscode.window.showWarningMessage('Run separate Deep prompting review?', { modal: true, detail: preflight }, 'Run Deep review');
+    const requestCount = plannedRequests(summarizePlan(prepared)).review + 1;
+    const ok = await vscode.window.showInformationMessage('Run a Deep prompting review?',
+      { modal: true, detail: effort[0].toUpperCase() + effort.slice(1) + ' depth · ' + requestCount + (requestCount === 1 ? ' model request.' : ' model requests.') }, 'Run Deep review');
     runtime.signal.throwIfAborted();
     if (ok !== 'Run Deep review') {
       runtime.stage('cancelled', 'Deep review cancelled');
@@ -1039,7 +1022,7 @@ async function deepReport(panel, month, parentRun, record, options = {}) {
     }
     const plan = summarizePlan(prepared);
     for (const line of describe(plan).split('\n').filter(Boolean)) runtime.event(line);
-    runtime.event(requestsText());
+    runtime.event('Requests for this run: ' + (requestCount - 1) + ' project review ' + (requestCount === 2 ? 'request' : 'requests') + ' at ' + effort + ' depth, then 1 final synthesis.');
     runtime.event(model.model + ' · ' + (target ? 'one project at a time' : 'up to ' + Math.min(DEEP_CONCURRENCY, reviews.length) + ' project reviews at once'));
     const reviewing = plan.some((item) => !item.reused && item.chunks > 1)
       ? 'Reviewing larger projects in session batches'
@@ -1085,7 +1068,7 @@ async function deepReport(panel, month, parentRun, record, options = {}) {
         revised.overviewStale = false;
       } else {
         revised.overviewStale = true;
-        vscode.window.showWarningMessage('Project reviews were saved. The final synthesis could not be generated.');
+        vscode.window.showWarningMessage('Project reviews saved without a final summary.');
       }
     }
     runtime.signal.throwIfAborted();
@@ -1211,15 +1194,9 @@ async function enhanceReport(panel, month, parentRun, record, { failedOnly = fal
     const known = new Set((record.evidence || []).map(projectKey));
     const requiresRebuild = selected.some((project) => !known.has(projectKey(project)));
     const cutoff = originalCutoff(month, parentRun, record);
-    const description = [
-      route.description,
-      'Projects: ' + selected.map((p) => p.name).join(', '),
-      requiresRebuild ? 'Some evidence will be rebuilt from available history through ' + new Date(cutoff).toLocaleString() + '.' : 'Uses the redacted evidence sample saved with this report.',
-      route.local ? 'Requests stay on the local model server.' : 'Sends selected redacted prompts and commit summaries through Claude Code.',
-      estimateTime ? 'The model will estimate example times where it has enough detail.' : '',
-      all ? 'Refreshes the monthly overview from the revised project reports when every project succeeds.' : 'The overview will be marked for review.'
-    ].filter(Boolean).join('\n');
-    if (await vscode.window.showWarningMessage('Enhance this saved report?', { modal: true, detail: description }, 'Enhance') !== 'Enhance') return;
+    const detail = selected.length + (selected.length === 1 ? ' project' : ' projects') + ' · ' + route.description + '.' +
+      (route.local ? '' : ' Redacted prompts are sent through your Claude Code.');
+    if (await vscode.window.showInformationMessage('Enhance this saved report?', { modal: true, detail }, 'Enhance') !== 'Enhance') return;
     runtime.start();
     const input = await getEnhancementEvidence(selected, record, month, cutoff, runtime);
     const result = await runProjectReports(input.projects, { ...route, estimateTime }, runtime);
@@ -1256,7 +1233,7 @@ async function enhanceReport(panel, month, parentRun, record, { failedOnly = fal
 
 function showRuntime(month, run, { metadata }) {
   if (!Array.isArray(metadata.events) || !metadata.events.length) {
-    return vscode.window.showInformationMessage('This saved report has no recorded runtime. New generation and enhancement runs record timings.');
+    return vscode.window.showInformationMessage('No timing details were recorded for this report.');
   }
   if (!channel) return;
   channel.appendLine('\nClaude Report runtime · ' + (run || month) + ' · ' + formatDuration(metadata.durationMs));

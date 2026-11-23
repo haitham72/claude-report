@@ -101,22 +101,41 @@ const clip = (text, words) => {
   return end >= cut.length * 0.4 ? cut.slice(0, end + 1) : cut + '…';
 };
 
-// First balanced {...} in the text that parses as JSON; prose braces around it are skipped.
-function extractObject(text) {
+// Every balanced top-level {...} in the text that parses as JSON, in order; prose braces are skipped.
+// Smaller local models often answer with the overview and the advice as two separate objects.
+function extractObjects(text) {
   const s = String(text || '');
-  for (let start = s.indexOf('{'); start !== -1; start = s.indexOf('{', start + 1)) {
-    let depth = 0, inStr = false;
+  const found = [];
+  let start = s.indexOf('{');
+  while (start !== -1) {
+    let depth = 0, inStr = false, end = -1;
     for (let i = start; i < s.length; i++) {
       const c = s[i];
       if (inStr) { if (c === '\\') i++; else if (c === '"') inStr = false; }
       else if (c === '"') inStr = true;
       else if (c === '{') depth++;
-      else if (c === '}' && --depth === 0) {
-        try { return JSON.parse(s.slice(start, i + 1)); } catch { break; }
-      }
+      else if (c === '}' && --depth === 0) { end = i; break; }
+    }
+    if (end < 0) break;
+    let parsed = null;
+    try { parsed = JSON.parse(s.slice(start, end + 1)); } catch { /* prose braces: try the next { */ }
+    if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+      found.push(parsed);
+      start = s.indexOf('{', end + 1);
+    } else {
+      start = s.indexOf('{', start + 1);
     }
   }
-  return null;
+  return found;
+}
+
+// The reply's objects merged in order; a separate top-level {strength, watch, habit} is the advice.
+function extractObject(text) {
+  const parts = extractObjects(text);
+  if (!parts.length) return null;
+  const j = Object.assign({}, ...parts);
+  if (!j.advice && j.strength && j.watch && j.habit) j.advice = { strength: j.strength, watch: j.watch, habit: j.habit };
+  return j;
 }
 
 function parseOverview(text, { prompting = false, prompts = 0 } = {}) {

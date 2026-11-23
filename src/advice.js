@@ -24,11 +24,20 @@ function item(raw, { evidence = true, topic = false } = {}) {
     if (!proof) return null;
     out.evidence = proof;
   }
-  if (topic) {
-    if (!Object.hasOwn(TOPICS, raw.topic)) return null;
-    out.topic = raw.topic;
-  }
+  // The topic only picks a documentation link, so a missing or unknown one is inferred from the
+  // text instead of discarding the whole card (small local models often leave it out).
+  if (topic) out.topic = Object.hasOwn(TOPICS, raw.topic) ? raw.topic : guessTopic(text);
   return out;
+}
+
+function guessTopic(text) {
+  const t = text.toLowerCase();
+  if (/verif|test|check|confirm/.test(t)) return 'verification';
+  if (/example|sample/.test(t)) return 'examples';
+  if (/context|background|paste|file/.test(t)) return 'context';
+  if (/step|iterat|follow.?up|smaller/.test(t)) return 'iteration';
+  if (/format|structure|order|list|section/.test(t)) return 'structure';
+  return 'specificity';
 }
 
 // Returns undefined unless all three parts are supported, so a thin answer never shows half a card.
@@ -42,7 +51,7 @@ function parseAdvice(raw, { prompts = 0 } = {}) {
   return { strength, watch, habit, links, firstLook: prompts < FIRST_LOOK_BELOW, prompts };
 }
 
-const ADVICE_REQUEST = '\n\nAlso return advice: {"strength":{"text":"","evidence":""},"watch":{"text":"","evidence":"","topic":""},"habit":{"text":"","topic":""}}. ' +
+const ADVICE_REQUEST = '\n\nIn the same JSON object, also return an "advice" key: {"strength":{"text":"","evidence":""},"watch":{"text":"","evidence":"","topic":""},"habit":{"text":"","topic":""}}. ' +
   'It is advice on how the person writes prompts, drawn only from the promptNote fields or promptingReviews in the data. ' +
   'Give one strength, one thing to watch and one habit to try that follows from the thing to watch. ' +
   `Each text is at most ${WORDS.text} words and each evidence at most ${WORDS.evidence} words, naming the project and paraphrasing what was seen, never quoting. ` +

@@ -63,3 +63,16 @@ test('turn-only days count as active days', () => {
   const e = buildEntry({ month: '2026-11', reports: { c: reports.a }, projects: [{ id: 'c', name: 'C', totalTokens: 0, promptCount: 0, daily: {}, dailyTurns: { '2026-11-03': 2, '2026-11-04': 1 } }] });
   assert.strictEqual(e.projects[0].activeDays, 2);
 });
+
+test('overview and advice returned as two separate JSON objects are both kept', () => {
+  const { parseOverview } = require('../src/overview');
+  const text = 'Here you go:\n{ "summary": "Worked on the reporting engine.", "goal": "Make reports safe.", "achievement": "Shipped host-aware tabs." }\n' +
+    '{ "strength": { "text": "Gives clear constraints.", "evidence": "In app, prompts set limits." }, ' +
+    '"watch": { "text": "Requests left unverified.", "evidence": "In app, fixes stayed requested.", "topic": "verification" }, ' +
+    '"habit": { "text": "Ask for a check before closing.", "topic": "verification" } }';
+  const out = parseOverview(text, { prompts: 40 });
+  assert.ok(out, 'overview parsed');
+  assert.strictEqual(out.summary, 'Worked on the reporting engine.');
+  assert.ok(out.advice, 'advice kept from the second object');
+  assert.strictEqual(out.advice.strength.text, 'Gives clear constraints.');
+});

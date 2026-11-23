@@ -27,6 +27,9 @@ All notable changes are listed here, newest first.
 - Cursor reads bubbles with numeric timestamps, SQLite reads wait up to 5 seconds on a busy database, and a scan that hangs is stopped after 2 minutes.
 - The sidebar keeps its tab after Refresh, rescans local servers when Connect opens, shows progress for local changes, and its project switches work from the keyboard.
 - Release jobs run read-only except publishing, with exact vsce and ovsx versions.
+- The overview and its prompting advice survive replies that put them in two JSON objects or leave out an advice topic, which smaller local models often do. Before, the overview or the advice was silently dropped.
+- Adds a Report name setting (claudeReport.reportName) for the name on reports and report file names. Empty keeps the Claude account email name.
+- Calmer, shorter messages: confirmations are one line, notices that are not failures are shown as information, and technical detail goes to the Claude Report output log.
 
 ## 0.11.2
 
