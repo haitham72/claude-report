@@ -216,16 +216,28 @@ async function inspectLocal(cfg, details, signal, fit = false) {
 const engineName = (engine) => (engine === 'ollama' ? 'Ollama' : 'LM Studio');
 const engineRunning = (state, engine) => state.engines.some((item) => item.engine === engine && item.running);
 
-// Starts the server when it is down, picks a model when none is chosen, and asks before loading a
-// model that does not fit the GPU memory free right now. Throws 'cancelled' when the user backs out.
+// Opens the engine only because the user asked to (a button click). Never called on its own.
+async function openEngine(engine) {
+  const name = engineName(engine);
+  const ok = await vscode.window.withProgress({ location: vscode.ProgressLocation.Notification, title: `Opening ${name}…` },
+    () => startEngine(engine));
+  if (!ok) vscode.window.showWarningMessage(`${name} did not respond. Open it yourself and start its local server, then try again.`);
+  return ok;
+}
+
+// Asks the user to open the server when it is down (never starts it unasked), picks a model when none
+// is chosen, and asks before loading a model that does not fit the GPU memory free right now.
+// Throws 'cancelled' when the user backs out.
 async function resolveLocal(cfg, signal, { ask = true } = {}) {
   let state = await inspectLocal(cfg, false, signal, true);
-  if (!engineRunning(state, cfg.engine)) {
-    log(`starting ${engineName(cfg.engine)}`);
-    if (await startEngine(cfg.engine)) state = await inspectLocal(cfg, false, signal, true);
-    if (!engineRunning(state, cfg.engine)) {
-      throw new Error(`Could not start ${engineName(cfg.engine)}. Open it once, or select Cloud on the Report tab.`);
-    }
+  while (!engineRunning(state, cfg.engine)) {
+    const name = engineName(cfg.engine);
+    const open = `Open ${name}`;
+    const choice = await vscode.window.showWarningMessage(`${name} is not running. Local reports need it open, or switch the Report tab to Cloud.`,
+      { modal: true }, open, 'Recheck');
+    if (choice === open) await openEngine(cfg.engine);
+    else if (choice !== 'Recheck') throw new Error('cancelled');
+    state = await inspectLocal(cfg, false, signal, true);
   }
   let chosen = pickModel(state.models, cfg.model);
   if (!chosen) throw new Error(cfg.model ? 'The selected model is unavailable on the local server.' : `${engineName(cfg.engine)} has no models. Download one first.`);
@@ -500,6 +512,7 @@ class Panel {
     if (m.cmd === 'dropChain') { dropChain(); return this.push(false); }
     if (m.cmd === 'newSession') return newSession();
     if (m.cmd === 'localScan') return this.scanLocal();
+    if (m.cmd === 'openEngine') { await openEngine(localConfig().engine); return this.scanLocal(); }
     if (m.cmd === 'localThinking') { await setLocal('thinking', m.enabled === true); return this.scanLocal(); }
     if (m.cmd === 'localEngine') { await setLocal('engine', m.engine === 'ollama' ? 'ollama' : 'lmstudio'); await setLocal('model', ''); return this.scanLocal(); }
     if (m.cmd === 'localPick') { await setLocal('model', String(m.model || '')); return this.scanLocal(); }
@@ -556,13 +569,7 @@ class Panel {
     update({ ...empty, checking: cfg.enabled });
     if (!cfg.enabled) return;
     try {
-      let state = await inspectLocal(cfg, true);
-      // Local is on but its server is down: start it rather than asking the user to.
-      if (!engineRunning(state, cfg.engine)) {
-        update({ ...state, checking: true, starting: engineName(cfg.engine) });
-        if (await startEngine(cfg.engine)) state = await inspectLocal(cfg, true);
-      }
-      update(state);
+      update(await inspectLocal(cfg, true));
     } catch (error) {
       log('local models: ' + error.message);
       update({ ...empty, error: 'Could not check the local server.' });

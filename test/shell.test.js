@@ -382,3 +382,15 @@ test('Choose model… opens Connect and asks the host to scan', () => {
   assert.strictEqual(s.sent[s.sent.length - 1].cmd, 'localScan');
   assert.ok(s.app.innerHTML.includes('Report model'));
 });
+
+test('a stopped local server is never started for the user: Connect offers an Open button that asks the host', () => {
+  const s = boot();
+  s.msg({ type: 'state', d: { ...state, localPrefs: { enabled: true, engine: 'lmstudio' } } });
+  s.click({ tab: 'connect' });
+  s.msg({ type: 'local', d: { enabled: true, engine: 'lmstudio', gpu: null, models: [],
+    engines: [{ engine: 'lmstudio', name: 'LM Studio', baseUrl: 'http://127.0.0.1:1234', running: false }, { engine: 'ollama', name: 'Ollama', baseUrl: 'http://127.0.0.1:11434', running: false }] } });
+  assert.match(s.app.innerHTML, /data-act="openEngine">Open LM Studio/);
+  assert.ok(!s.sent.some((m) => m.cmd === 'openEngine'), 'nothing opened before the click');
+  s.click({ act: 'openEngine' });
+  assert.ok(s.sent.some((m) => m.cmd === 'openEngine'));
+});

@@ -429,12 +429,14 @@ html, body { margin: 0; padding: 0; font-family: var(--vscode-font-family); font
       h += row('Overview', 'writes the three monthly cards', '<span class="val">' + esc(cloud.final || 'sonnet · high') + '</span>');
       return h;
     }
-    if (!L || L.checking) return h + row(L && L.starting ? 'Starting ' + esc(L.starting) : 'Checking local server', '', '<span class="dim" role="status">…</span>');
+    if (!L || L.checking) return h + row('Checking local server', '', '<span class="dim" role="status">…</span>');
     if (L.error) return h + row(esc(L.error), '', '<button type="button" class="btn sm" data-act="localScan">Retry</button>');
     var eng = L.engines.filter(function (e) { return e.engine === L.engine; })[0] || {};
-    h += row('Engine', eng.running ? 'running on ' + esc(eng.baseUrl.replace('http://', '')) : 'not running, start its server', '<span class="seg">' + L.engines.map(function (e) {
+    h += row('Engine', eng.running ? 'running on ' + esc(eng.baseUrl.replace('http://', '')) : 'not running', '<span class="seg">' + L.engines.map(function (e) {
       return '<a data-eng="' + e.engine + '" class="' + (L.engine === e.engine ? 'on' : '') + '">' + esc(e.name) + '</a>';
     }).join('') + '</span>');
+    // Never started for the user: offer a button, and open it only on click.
+    if (!eng.running && eng.name) h += row('Not running', 'open it to run reports locally', '<button type="button" class="btn sm" data-act="openEngine">Open ' + esc(eng.name) + '</button>');
     if (L.gpu) h += row('GPU', (L.gpu.freeMiB / 1024).toFixed(1) + ' GB free right now', '<span class="val">' + esc(L.gpu.name.replace(/^NVIDIA GeForce /, '')) + ' · ' + Math.round(L.gpu.totalMiB / 1024) + ' GB</span>');
     else h += row('GPU', 'context limits need an NVIDIA card', '<span class="dim">not detected</span>');
     if (eng.running) {
@@ -555,6 +557,7 @@ html, body { margin: 0; padding: 0; font-family: var(--vscode-font-family); font
     else if (a === 'newSession') post({ cmd: 'newSession' });
     else if (a === 'sessOnly') { S.sessOnly = !S.sessOnly; persist(); render(); }
     else if (a === 'localScan') post({ cmd: 'localScan' });
+    else if (a === 'openEngine') { S.local = Object.assign({}, S.local, { checking: true }); render(); post({ cmd: 'openEngine' }); }
     else if (a === 'pickFolder') post({ cmd: 'pickFolder' });
     else if (a === 'test') { S.test = null; post({ cmd: 'test' }); }
     else if (a === 'open' || a === 'manage' || a === 'retryFailed') post(Object.assign({ cmd: a, month: t.dataset.month }, t.dataset.run ? { run: t.dataset.run } : {}));

@@ -22,7 +22,7 @@ Claude Report shows your Claude Code, Codex, Antigravity and Cursor usage inside
 
 - **Sessions:** browse your Claude Code history and resume any session in its own folder.
 - **Status bar:** model and context at a glance, plus plan gauges once connected.
-- **Cloud or local:** write reports with your Claude Code sign-in, or keep them on your machine with LM Studio or Ollama. The extension starts the local server and picks a model that fits your GPU.
+- **Cloud or local:** write reports with your Claude Code sign-in, or keep them on your machine with LM Studio or Ollama. If the local server is not running, it asks you to open it; it picks a model that fits your GPU.
 - **Export:** save reports as HTML or PDF.
 - **Private:** reads local transcripts, redacts common secrets, no telemetry.
 
