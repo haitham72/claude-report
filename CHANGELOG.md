@@ -28,7 +28,7 @@ All notable changes are listed here, newest first.
 - The sidebar keeps its tab after Refresh, rescans local servers when Connect opens, shows progress for local changes, and its project switches work from the keyboard.
 - Release jobs run read-only except publishing, with exact vsce and ovsx versions.
 - The overview and its prompting advice survive replies that put them in two JSON objects or leave out an advice topic, which smaller local models often do. Before, the overview or the advice was silently dropped.
-- Adds a Report name setting (claudeReport.reportName) for the name on reports and report file names. Empty keeps the Claude account email name.
+- Picks the name on a report automatically: the Claude profile name, else git user.name, else the Claude email name, else the computer's user name. A report with three or fewer projects is named after them.
 - Calmer, shorter messages: confirmations are one line, notices that are not failures are shown as information, and technical detail goes to the Claude Report output log.
 
 ## 0.11.2

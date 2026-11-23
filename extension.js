@@ -868,8 +868,7 @@ async function writeReport(panel, keys, runtime, { dateRange, estimateTime, dept
   const result = await runProjectReports(projects, { local, models, estimateTime }, runtime);
   if (!Object.keys(result.reports).length) throw new Error('Every project failed. See the project rows and runtime log for details.');
 
-  // The name on the report: the Report name setting, else the Claude account's email name.
-  const user = String(vscode.workspace.getConfiguration('claudeReport').get('reportName') || '').trim() || accountUsername();
+  const user = accountUsername();
   if (!dateRange) applyTimeEvidence(result.reports, timeEntries(month, projects, scan.projects));
   const overview = depth === 'deep' ? null : await writeOverview({ user, month, projects, result, runtime, dateRange });
   if (depth !== 'deep' && !overview) vscode.window.showWarningMessage('The report was saved without the overview cards.');
