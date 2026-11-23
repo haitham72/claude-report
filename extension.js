@@ -6,9 +6,9 @@ const os = require('os');
 const path = require('path');
 const { execFileSync, spawnSync } = require('child_process');
 const { Worker } = require('worker_threads');
-const { readLive } = require('./src/live');
+const { readLive, SHARED_USAGE } = require('./src/live');
 const { readPlanHistory } = require('./src/plan-history');
-const { planInstall, applyInstall, applyUninstall, installRuntime, migrateLegacy, isConnected } = require('./src/install');
+const { planInstall, applyInstall, applyUninstall, installRuntime, migrateLegacy, isConnected, isWired } = require('./src/install');
 const { runClaude, MODELS, EFFORTS } = require('./src/claude');
 const { generateReports, expandedProjectWords } = require('./src/generate');
 const { buildData, renderHtml, renderDocument, withExampleHours } = require('./src/render');
@@ -39,8 +39,10 @@ const { localDay, readDateRange, dateRangeLabel, reportBounds } = require('./src
 const pkg = require('./package.json');
 
 const HOME_DIR = process.env.CLAUDE_REPORT_HOME || path.join(os.homedir(), '.claude-report');
-const RUNTIME_HOOK = path.join(HOME_DIR, 'runtime', 'bin', 'hook.js');
-const CLAUDE_SETTINGS = path.join(os.homedir(), '.claude', 'settings.json');
+// One runtime folder per version: editors running different builds never overwrite each other's hook.
+const RUNTIME_HOOK = path.join(HOME_DIR, 'runtime', pkg.version, 'bin', 'hook.js');
+// Claude Code honours CLAUDE_CONFIG_DIR; so do we, which also keeps tests away from the real settings.json.
+const CLAUDE_SETTINGS = path.join(process.env.CLAUDE_CONFIG_DIR || path.join(os.homedir(), '.claude'), 'settings.json');
 const STATUS_REFRESH_MS = 15000;
 const SCAN_MAX_AGE_MS = 120000;
 const WINDOW_DAYS = 30;
@@ -115,7 +117,7 @@ function openReport(month, run = '') {
 // where Claude Code runs it, and wins while its reading is fresh.
 function currentLive() {
   const cwd = workspaceCwd();
-  return mergeLive({ hook: readLive({ cwd, dir: HOME_DIR }), transcript: readTranscriptLive({ cwd }) });
+  return mergeLive({ hook: readLive({ cwd, dir: HOME_DIR, sharedFile: SHARED_USAGE }), transcript: readTranscriptLive({ cwd }) });
 }
 
 // --- bottom status bar -------------------------------------------------------
@@ -152,7 +154,7 @@ function refreshStatus(slots) {
 // Writes the state of every live source to the Claude Report output panel and shows it.
 function diagnose() {
   const cwd = workspaceCwd();
-  const hook = readLive({ cwd, dir: HOME_DIR });
+  const hook = readLive({ cwd, dir: HOME_DIR, sharedFile: SHARED_USAGE });
   const transcript = readTranscriptLive({ cwd });
   const merged = currentLive();
   const items = statusItems(merged, COMMANDS);
@@ -494,6 +496,7 @@ class Panel {
     const local = localConfig();
     const output = exportOptions();
     let connected = false;
+    // Connected means the setting points at us AND the file it runs exists; otherwise the panel waits forever.
     try { connected = isConnected(JSON.parse(fs.readFileSync(CLAUDE_SETTINGS, 'utf8'))); } catch { /* not readable means not connected */ }
     const history = listReports(HOME_DIR, { includeArchived: true });
     return {
@@ -594,7 +597,16 @@ async function installHook(context) {
   try { settings = JSON.parse(fs.readFileSync(CLAUDE_SETTINGS, 'utf8')); } catch { /* applyInstall reports unreadable files */ }
   const plan = planInstall(settings, RUNTIME_HOOK, nodePath);
   if (plan.error) { vscode.window.showErrorMessage(`Claude Report: ${plan.error}`); return; }
-  if (plan.already) { vscode.window.showInformationMessage('Claude Code is already connected.'); return; }
+  if (plan.already) {
+    // settings.json can point at us while the runtime copy is gone; Connect must still repair it.
+    try {
+      installRuntime(context.extensionPath, HOME_DIR);
+      vscode.window.showInformationMessage('Claude Code is already connected. Hook files refreshed.');
+    } catch (e) {
+      vscode.window.showErrorMessage(`Claude Report: could not write ${RUNTIME_HOOK}: ${e.message}`);
+    }
+    return;
+  }
 
   const ok = await vscode.window.showWarningMessage(
     `Connect Claude Code?\n\n${plan.changes.join('\n')}\n\nA backup of settings.json is kept next to it.`,
@@ -1210,15 +1222,34 @@ async function compareReport(month, run, record) {
 
 // --- lifecycle ---------------------------------------------------------------
 
+function syncRuntime(context) {
+  let settings;
+  try { settings = JSON.parse(fs.readFileSync(CLAUDE_SETTINGS, 'utf8')); } catch { return; }
+  if (!isWired(settings)) return; // never connected here: leave settings.json to the Connect command
+  let hookPath;
+  try { hookPath = installRuntime(context.extensionPath, HOME_DIR); }
+  catch (e) { log(`runtime copy failed, status line will not report: ${e.message}`); return; }
+  const nodePath = resolveNode();
+  if (!nodePath) return;
+  const plan = planInstall(settings, hookPath, nodePath);
+  if (plan.error || plan.already) return;
+  try {
+    applyInstall({ settingsPath: CLAUDE_SETTINGS, hookPath, nodePath, configDir: HOME_DIR });
+    log(plan.changes.join('; '));
+  } catch (e) { log(`statusLine update failed: ${e.message}`); }
+}
+
 let timer = null;
 
 function activate(context) {
   migrateLegacy(HOME_DIR);
-  // An extension update replaces its folder; keep the copy the status line runs in step with it.
-  try { if (fs.existsSync(RUNTIME_HOOK)) installRuntime(context.extensionPath, HOME_DIR); } catch { /* the status bar still works */ }
-
   channel = vscode.window.createOutputChannel ? vscode.window.createOutputChannel('Claude Report') : null;
   log(`activated ${pkg.version} in ${vscode.env && vscode.env.appName ? vscode.env.appName : 'an editor'}`);
+
+  // Once connected, every editor that runs this extension keeps the hook healthy: it writes its own
+  // versioned runtime copy, and moves the statusLine forward only when its build is newer than the one
+  // in use or that one's file is gone. Older installs in other editors never downgrade it.
+  syncRuntime(context);
 
   // A higher priority sits further left, so the slots read in order. Left is the default
   // because the right end is often crowded; it can be switched in settings (needs a reload).

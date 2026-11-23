@@ -11,15 +11,38 @@ const { writeFileAtomic } = require('./atomic');
 const hookCommand = (hookPath, nodePath = 'node') =>
   `${nodePath === 'node' ? 'node' : `"${nodePath.replace(/\\/g, '/')}"`} "${path.resolve(hookPath).replace(/\\/g, '/')}"`;
 
-const isOurs = (sl) => !!(sl && typeof sl.command === 'string' && /ide-companio|claude-report/.test(sl.command) && sl.command.includes('hook.js'));
+// Ours by folder name, or by the runtime layout itself so a custom CLAUDE_REPORT_HOME still counts.
+const isOurs = (sl) => !!(sl && typeof sl.command === 'string' && sl.command.includes('hook.js')
+  && (/ide-companio|claude-report/.test(sl.command) || /[\\/]runtime[\\/](\d+\.\d+\.\d+[\\/])?bin[\\/]hook\.js/.test(sl.command)));
 
-function planInstall(settings, hookPath, nodePath) {
+// The hook script a statusLine command runs: the last quoted (or bare) path ending in hook.js.
+function hookPathOf(command) {
+  if (typeof command !== 'string') return null;
+  const m = command.match(/"([^"]*hook\.js)"\s*$/) || command.match(/(\S*hook\.js)\s*$/);
+  return m ? m[1] : null;
+}
+
+// Runtime copies live in runtime/<version>/ so several editors running different versions never
+// overwrite a file another editor (or a running Claude Code status line) has open. Unversioned and
+// ide-companio paths count as 0.0.0, so any versioned build moves them forward.
+function runtimeVersionOf(p) {
+  const m = typeof p === 'string' && p.replace(/\\/g, '/').match(/\/runtime\/(\d+)\.(\d+)\.(\d+)\/bin\/hook\.js$/);
+  return m ? [+m[1], +m[2], +m[3]] : [0, 0, 0];
+}
+const cmpVersion = (a, b) => a[0] - b[0] || a[1] - b[1] || a[2] - b[2];
+
+function planInstall(settings, hookPath, nodePath, { exists = fs.existsSync } = {}) {
   const sl = settings && settings.statusLine;
   if (isOurs(sl)) {
-    // Earlier builds installed a copy under ~/.ide-companio. Move the setting to the new copy and keep the saved chain.
-    if (/.ide-companio/.test(sl.command) && hookPath && !/.ide-companio/.test(hookPath)) {
+    const current = hookPathOf(sl.command);
+    const same = current && hookPath && path.resolve(current) === path.resolve(hookPath);
+    // Newest build wins: never move the setting to an older copy, unless the one it points at is gone.
+    const newer = hookPath && cmpVersion(runtimeVersionOf(hookPath), runtimeVersionOf(current)) > 0;
+    const missing = !current || !exists(current);
+    if (hookPath && !same && (newer || missing)) {
       const next = { ...settings, statusLine: { ...sl, type: 'command', command: hookCommand(hookPath, nodePath) } };
-      return { settings: next, chain: null, already: false, legacy: true, changes: ['statusLine moves from the old Companio hook to the Claude Report hook; your own status line stays chained'] };
+      const why = /.ide-companio/.test(sl.command) ? 'from the old Companio hook' : missing ? 'from a missing hook file' : 'to the newer hook';
+      return { settings: next, chain: null, already: false, legacy: true, changes: [`statusLine moves ${why}; your own status line stays chained`] };
     }
     return { settings, chain: null, already: true, changes: [] };
   }
@@ -59,15 +82,22 @@ const writeSettings = (p, s) => {
 
 // The extension folder is versioned and disappears on update or uninstall, so
 // settings.json must never point into it. The hook and the one module it needs
-// are copied to a stable place instead.
-function installRuntime(extensionPath, destDir = DEFAULT_DIR) {
-  const files = [['bin', 'hook.js'], ['src', 'live.js']];
-  for (const [dir, name] of files) {
-    const to = path.join(destDir, 'runtime', dir);
-    fs.mkdirSync(to, { recursive: true });
-    fs.copyFileSync(path.join(extensionPath, dir, name), path.join(to, name));
+// are copied to a stable place instead, one folder per version. A folder already
+// holding identical files is left alone, and changed files are written beside the
+// target and renamed in, so a status line mid-run never reads half a file.
+function installRuntime(extensionPath, destDir = DEFAULT_DIR, version = require(path.join(extensionPath, 'package.json')).version) {
+  if (!/^\d+\.\d+\.\d+$/.test(String(version))) throw new Error(`bad runtime version: ${version}`);
+  const root = path.join(destDir, 'runtime', String(version));
+  for (const [dir, name] of [['bin', 'hook.js'], ['src', 'live.js']]) {
+    const to = path.join(root, dir, name);
+    const body = fs.readFileSync(path.join(extensionPath, dir, name));
+    let same = false;
+    try { same = fs.readFileSync(to).equals(body); } catch { /* not there yet */ }
+    if (same) continue;
+    fs.mkdirSync(path.dirname(to), { recursive: true });
+    writeFileAtomic(to, body);
   }
-  return path.join(destDir, 'runtime', 'bin', 'hook.js');
+  return path.join(root, 'bin', 'hook.js');
 }
 
 function applyInstall({ settingsPath, hookPath, nodePath, configDir = DEFAULT_DIR }) {
@@ -119,4 +149,12 @@ function migrateLegacy(newDir, oldDir = path.join(require('os').homedir(), '.ide
   }
 }
 
-module.exports = { hookCommand, planInstall, applyInstall, planUninstall, applyUninstall, installRuntime, migrateLegacy, isConnected: (settings) => isOurs(settings && settings.statusLine) };
+// Connected means the setting is ours AND the script it runs exists; a dangling path never reports.
+const isConnected = (settings, exists = fs.existsSync) => {
+  const sl = settings && settings.statusLine;
+  if (!isOurs(sl)) return false;
+  const p = hookPathOf(sl.command);
+  return !!p && exists(p);
+};
+
+module.exports = { hookCommand, hookPathOf, runtimeVersionOf, planInstall, applyInstall, planUninstall, applyUninstall, installRuntime, migrateLegacy, isWired: (settings) => isOurs(settings && settings.statusLine), isConnected };

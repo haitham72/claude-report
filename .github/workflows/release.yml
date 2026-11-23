@@ -2,7 +2,9 @@ name: Release
 
 # Pushing a tag like v0.11.1 tests, packages and publishes that version. Ordinary pushes never publish.
 # Open VSX uses trusted publishing (GitHub OIDC, no secret): register this repository and release.yml under the
-# extension's Trusted Publishers on open-vsx.org. The VS Code Marketplace needs the VSCE_PAT secret and is skipped without it.
+# extension's Trusted Publishers on open-vsx.org. The VS Code Marketplace also uses trusted publishing: on
+# marketplace.visualstudio.com/manage, publisher haitham72, Trusted Publishing, create a policy for owner haitham72,
+# repository claude-report, workflow release.yml, no environment. Global Azure DevOps PATs stop working on 2026-12-01.
 on:
   push:
     tags: ['v*']
@@ -45,11 +47,8 @@ jobs:
       - run: npm run package
 
       - name: Publish to the VS Code Marketplace
-        env:
-          VSCE_PAT: ${{ secrets.VSCE_PAT }}
-        run: |
-          if [ -z "$VSCE_PAT" ]; then echo "::warning::VSCE_PAT is not set, skipping the Marketplace"; exit 0; fi
-          npx --yes @vscode/vsce publish --no-dependencies --packagePath "${{ steps.version.outputs.vsix }}"
+        # --skip-duplicate: a version already uploaded through the web form does not fail the release.
+        run: npx --yes @vscode/vsce@^4.1.1 publish --oidc --skip-duplicate --packagePath "${{ steps.version.outputs.vsix }}"
 
       - name: Publish to Open VSX
         run: npx --yes ovsx publish "${{ steps.version.outputs.vsix }}" --trusted-publishing

@@ -2,6 +2,12 @@
 
 All notable changes are listed here, newest first.
 
+## 0.11.2
+
+- Runs in several editors at once. The status-line hook is copied to a folder per version (`~/.claude-report/runtime/<version>/`), so editors on different builds never overwrite each other's copy or a file Claude Code is running. The newest build moves the status line forward; an older build in another editor never moves it back.
+- Repairs itself: on startup, a connected editor rewrites a missing hook and repoints the status line if the file it named is gone. The panel counts as connected only when that file exists, and Connect refreshes the files even when the setting is already in place.
+- Plan usage no longer depends on the hook alone. When the hook is silent, the five-hour and weekly gauges read the shared usage cache under the system temp folder, newest reading first, ignored once it is older than six hours.
+
 ## 0.11.1
 
 - Rewrites the README, which is also the Marketplace page, as a short product page: a cover, a GIF of a report, and four images for plan usage, what you shipped, prompting advice and evidence. The full manual moves to `docs/guide.md`.

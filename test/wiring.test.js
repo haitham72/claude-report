@@ -9,6 +9,8 @@ const path = require('path');
 function loadWithFakeVscode({ extension = false, rejectAll = false } = {}) {
   // Keeps activate away from the real ~/.claude-report.
   process.env.CLAUDE_REPORT_HOME = require('fs').mkdtempSync(path.join(require('os').tmpdir(), 'wire-'));
+  // ...and away from the real ~/.claude/settings.json: activate may repoint a connected status line.
+  process.env.CLAUDE_CONFIG_DIR = require('fs').mkdtempSync(path.join(require('os').tmpdir(), 'wire-cfg-'));
   const calls = { commands: [], views: [], statusItems: [], executed: [], terminals: [], errors: [] };
   const fake = {
     window: {
@@ -88,4 +90,18 @@ test('a session from another folder resumes in a terminal in its own folder even
   await ext._sessions.resumeSession(id, require('os').tmpdir(), 'Some title');
   assert.strictEqual(calls.terminals.length, 1);
   assert.deepStrictEqual(calls.terminals[0].sent, ['claude --resume ' + id]);
+});
+
+test('activate moves a connected status line to its own versioned hook, only in the configured settings', () => {
+  const fs = require('fs');
+  const { ext } = loadWithFakeVscode();
+  const settingsPath = path.join(process.env.CLAUDE_CONFIG_DIR, 'settings.json');
+  const old = path.join(process.env.CLAUDE_REPORT_HOME, 'runtime', 'bin', 'hook.js').replace(/\\/g, '/');
+  fs.writeFileSync(settingsPath, JSON.stringify({ statusLine: { type: 'command', command: `node "${old}"` } }));
+  ext.activate({ subscriptions: [], extensionPath: path.join(__dirname, '..') });
+  ext.deactivate();
+  const cmd = JSON.parse(fs.readFileSync(settingsPath, 'utf8')).statusLine.command;
+  const v = require('../package.json').version;
+  assert.ok(cmd.includes(`/runtime/${v}/bin/hook.js`), cmd);
+  assert.ok(fs.existsSync(path.join(process.env.CLAUDE_REPORT_HOME, 'runtime', v, 'bin', 'hook.js')));
 });

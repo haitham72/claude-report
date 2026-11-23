@@ -36,7 +36,9 @@ test('installRuntime copies the hook and its module to a stable folder that stil
   const dest = tmp();
   const hook = installRuntime(path.join(__dirname, '..'), dest);
   assert.ok(fs.existsSync(hook));
-  assert.ok(fs.existsSync(path.join(dest, 'runtime', 'src', 'live.js')));
+  const v = require('../package.json').version;
+  assert.strictEqual(hook, path.join(dest, 'runtime', v, 'bin', 'hook.js'));
+  assert.ok(fs.existsSync(path.join(dest, 'runtime', v, 'src', 'live.js')));
   const fresh = require('child_process').execFileSync('node', [hook], { input: '{"session_id":"s","model":{"display_name":"M"}}', encoding: 'utf8', env: { ...process.env, HOME: dest, USERPROFILE: dest, NO_COLOR: '1' } });
   assert.strictEqual(fresh, 'M');
 });

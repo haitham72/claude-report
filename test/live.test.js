@@ -5,7 +5,7 @@ const assert = require('node:assert');
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
-const { writeLive, readLive, readHistory } = require('../src/live');
+const { writeLive, readLive, readHistory, readSharedUsage } = require('../src/live');
 
 const tmp = () => fs.mkdtempSync(path.join(os.tmpdir(), 'live-'));
 const NOW = 1_800_000_000_000;
@@ -110,4 +110,31 @@ test('history keeps samples over the week, even during frequent readings, and re
   assert.deepStrictEqual(history.map((entry) => entry.t), [NOW - 6 * day, NOW, NOW + 240000, NOW + 300000, NOW + 360000, NOW + 390000]);
   assert.strictEqual(history.at(-1).sr, NOW / 1000 + 7200);
   assert.strictEqual(history.at(-2).wr, NOW / 1000 + 86400);
+});
+
+test('shared usage cache fills the gauges when the hook is silent, newest reading wins', () => {
+  const dir = tmp();
+  const file = path.join(dir, 'shared.json');
+  fs.writeFileSync(file, JSON.stringify({
+    five_hour: { utilization: 3, resets_at: new Date(NOW + 3600e3).toISOString() },
+    seven_day: { utilization: 150, resets_at: 'bogus' }
+  }));
+  fs.utimesSync(file, NOW / 1000, NOW / 1000);
+  const shared = readSharedUsage({ file, now: NOW });
+  assert.strictEqual(shared.fiveHour.pct, 3);
+  assert.strictEqual(shared.fiveHour.resetsAt, NOW / 1000 + 3600);
+  assert.strictEqual(shared.sevenDay, null);
+
+  // No hook data at all: the shared cache alone is enough.
+  const only = readLive({ dir, now: NOW + 1000, sharedFile: file });
+  assert.strictEqual(only.fiveHour.pct, 3);
+  assert.strictEqual(only.stale, true);
+
+  // A newer hook reading beats the older cache.
+  writeLive(status(), { dir, now: NOW + 5000 });
+  assert.strictEqual(readLive({ dir, now: NOW + 6000, sharedFile: file }).fiveHour.pct, 30);
+
+  // Too old, or not passed: ignored.
+  assert.strictEqual(readSharedUsage({ file, now: NOW + 7 * 3600e3 }), null);
+  assert.strictEqual(readLive({ dir: tmp(), now: NOW }), null);
 });

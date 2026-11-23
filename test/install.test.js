@@ -90,3 +90,32 @@ test('uninstall does nothing when the statusLine is not ours', () => {
   assert.strictEqual(p.restored, false);
   assert.deepStrictEqual(p.settings, s);
 });
+
+test('several editors share one hook: newest version wins, never downgrades, dangling path heals', () => {
+  const { runtimeVersionOf, hookPathOf, isConnected } = require('../src/install');
+  const at = (v) => `C:/u/.claude-report/runtime/${v}/bin/hook.js`;
+  const wired = (p) => ({ statusLine: { type: 'command', command: `"C:/n/node.exe" "${p}"` } });
+  const all = () => true;
+
+  assert.deepStrictEqual(runtimeVersionOf(at('0.11.2')), [0, 11, 2]);
+  assert.deepStrictEqual(runtimeVersionOf('C:/u/.claude-report/runtime/bin/hook.js'), [0, 0, 0]);
+  assert.strictEqual(hookPathOf(wired(at('1.0.0')).statusLine.command), at('1.0.0'));
+
+  // An older editor starting up leaves a newer hook alone.
+  assert.strictEqual(planInstall(wired(at('0.12.0')), at('0.11.2'), 'node', { exists: all }).already, true);
+  // A newer editor moves it forward; 0.10 < 0.9 must not compare as strings.
+  const up = planInstall(wired(at('0.9.1')), at('0.11.2'), 'node', { exists: all });
+  assert.strictEqual(up.already, false);
+  assert.strictEqual(up.legacy, true);
+  assert.ok(up.settings.statusLine.command.includes('/runtime/0.11.2/'));
+  // The unversioned path from 0.11.1 and earlier moves to the versioned one.
+  assert.strictEqual(planInstall(wired('C:/u/.claude-report/runtime/bin/hook.js'), at('0.11.2'), 'node', { exists: all }).already, false);
+  // Same version: nothing to do.
+  assert.strictEqual(planInstall(wired(at('0.11.2')), at('0.11.2'), 'node', { exists: all }).already, true);
+  // A newer path whose file is gone is replaced, even by an older build.
+  assert.strictEqual(planInstall(wired(at('0.12.0')), at('0.11.2'), 'node', { exists: () => false }).already, false);
+
+  assert.strictEqual(isConnected(wired(at('0.11.2')), () => false), false);
+  assert.strictEqual(isConnected(wired(at('0.11.2')), all), true);
+  assert.strictEqual(isConnected({ statusLine: { type: 'command', command: 'bash ~/x.sh' } }, all), false);
+});

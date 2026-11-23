@@ -76,7 +76,7 @@ Keep both tokens out of the repository, the shell history and chat. Prefer the `
 
 ## Publishing
 
-Releases publish from GitHub Actions ([release.yml](../.github/workflows/release.yml)). Open VSX needs no token: on open-vsx.org, open the extension under **Settings → Extensions**, choose **Add a trusted publisher**, and enter owner `haitham72`, repository `claude-report`, workflow `release.yml` and no environment. The VS Code Marketplace needs a `VSCE_PAT` secret under the repository's **Settings → Secrets and variables → Actions**; without it that step is skipped with a warning.
+Releases publish from GitHub Actions ([release.yml](../.github/workflows/release.yml)). Open VSX needs no token: on open-vsx.org, open the extension under **Settings → Extensions**, choose **Add a trusted publisher**, and enter owner `haitham72`, repository `claude-report`, workflow `release.yml` and no environment. The VS Code Marketplace needs no token either: at marketplace.visualstudio.com/manage, open publisher `haitham72`, choose **Trusted Publishing**, expand **Create**, and enter a policy name, owner `haitham72`, repository `claude-report`, workflow `release.yml` and no environment. Then a tag such as `v0.11.2` publishes to both stores. A version already uploaded through the web form is skipped, not failed. Global Azure DevOps PATs stop working on 1 December 2026, so `VSCE_PAT` is no longer used.
 
 1. Update `CHANGELOG.md` and the `version` in `package.json`, and commit.
 2. Push the commit, then a tag for that version:

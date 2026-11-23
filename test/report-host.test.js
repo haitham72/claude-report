@@ -13,6 +13,7 @@ function loadHost(vscode, home, runClaude, workerResult = () => ({ projects: [] 
   const file = require.resolve('../extension');
   const load = Module._load;
   const previousHome = process.env.CLAUDE_REPORT_HOME;
+  const previousConfig = process.env.CLAUDE_CONFIG_DIR;
   const inputs = {
     vscode,
     os: { ...os, homedir: () => home },
@@ -29,6 +30,7 @@ function loadHost(vscode, home, runClaude, workerResult = () => ({ projects: [] 
     './src/transcript-live': { readTranscriptLive: () => null },
   };
   process.env.CLAUDE_REPORT_HOME = home;
+  process.env.CLAUDE_CONFIG_DIR = path.join(home, '.claude');
   Module._load = function (name, parent, ...rest) {
     return parent?.filename === file && Object.hasOwn(inputs, name) ? inputs[name] : load.call(this, name, parent, ...rest);
   };
@@ -38,6 +40,8 @@ function loadHost(vscode, home, runClaude, workerResult = () => ({ projects: [] 
     Module._load = load;
     if (previousHome === undefined) delete process.env.CLAUDE_REPORT_HOME;
     else process.env.CLAUDE_REPORT_HOME = previousHome;
+    if (previousConfig === undefined) delete process.env.CLAUDE_CONFIG_DIR;
+    else process.env.CLAUDE_CONFIG_DIR = previousConfig;
   }
 }
 

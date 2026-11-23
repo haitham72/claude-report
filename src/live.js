@@ -107,12 +107,34 @@ function prune(live) {
   } catch { /* best effort */ }
 }
 
+// Plan usage as Claude Code's /usage reports it, cached under the temp dir by status tools
+// that poll the usage endpoint. Used when the statusLine hook is not delivering readings, so
+// the gauges do not depend on one script being present. Treated as untrusted input.
+const SHARED_USAGE = path.join(os.tmpdir(), 'claude_oauth_usage.json');
+const SHARED_MAX_AGE_MS = 6 * 3600 * 1000; // past the 5h window an old value stops meaning anything
+
+function readSharedUsage({ file = SHARED_USAGE, now = Date.now() } = {}) {
+  try {
+    const st = fs.statSync(file);
+    if (now - st.mtimeMs > SHARED_MAX_AGE_MS) return null;
+    const j = JSON.parse(fs.readFileSync(file, 'utf8'));
+    const win = (w) => {
+      const pct = num(w && w.utilization);
+      if (pct === null || pct < 0 || pct > 100) return null;
+      const t = Date.parse(w.resets_at);
+      return { pct, resetsAt: Number.isFinite(t) ? Math.round(t / 1000) : null, seenAt: st.mtimeMs };
+    };
+    const out = { fiveHour: win(j && j.five_hour), sevenDay: win(j && j.seven_day) };
+    return out.fiveHour || out.sevenDay ? out : null;
+  } catch { return null; }
+}
+
 const normCwd = (p) => {
   const n = String(p).replace(/\\/g, '/').replace(/\/+$/, '');
   return process.platform === 'win32' ? n.toLowerCase() : n;
 };
 
-function readLive({ dir = DEFAULT_DIR, now = Date.now(), maxAgeMs = 6 * 3600 * 1000, cwd } = {}) {
+function readLive({ dir = DEFAULT_DIR, now = Date.now(), maxAgeMs = 6 * 3600 * 1000, cwd, sharedFile = null } = {}) {
   const live = path.join(dir, 'live');
   let files = [];
   try { files = fs.readdirSync(live).filter((f) => f.endsWith('.json')); } catch { /* the account windows may still be available */ }
@@ -132,8 +154,12 @@ function readLive({ dir = DEFAULT_DIR, now = Date.now(), maxAgeMs = 6 * 3600 * 1
   const accountWindow = (key) => {
     const snap = freshest(snaps.filter((s) => s[key]));
     const cached = saved[key];
-    return alive(cached && (!snap || cached.seenAt >= snap.updatedAt) ? cached : snap && { ...snap[key], seenAt: snap.updatedAt });
+    const fromHook = cached && (!snap || cached.seenAt >= snap.updatedAt) ? cached : snap && { ...snap[key], seenAt: snap.updatedAt };
+    const fromShared = shared && shared[key];
+    // Newest reading wins, whichever source it came from.
+    return alive(fromShared && (!fromHook || fromShared.seenAt > (fromHook.seenAt || 0)) ? fromShared : fromHook);
   };
+  const shared = sharedFile ? readSharedUsage({ file: sharedFile, now }) : null;
   const fiveHour = accountWindow('fiveHour');
   const sevenDay = accountWindow('sevenDay');
   if (!pick && !fiveHour && !sevenDay) return null;
@@ -146,4 +172,4 @@ function readLive({ dir = DEFAULT_DIR, now = Date.now(), maxAgeMs = 6 * 3600 * 1
   };
 }
 
-module.exports = { DEFAULT_DIR, writeLive, readLive, readHistory };
+module.exports = { DEFAULT_DIR, SHARED_USAGE, writeLive, readLive, readHistory, readSharedUsage };
