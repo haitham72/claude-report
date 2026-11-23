@@ -425,7 +425,9 @@ async function exportSavedReport(month, run, manual) {
     return;
   }
   const started = Date.now();
-  const res = await exportReport({ month, label: data.label, user: data.user, overview: data.overview, htmlPath: path.join(dir, 'report.html'), htmlContent: renderDocument(data), options, home: dir, run });
+  // Up to three projects: name the file after them, not the person.
+  const names = (data.projects || []).map((p) => p.name).filter(Boolean);
+  const res = await exportReport({ month, label: data.label, user: names.length && names.length <= 3 ? names.join(' ') : data.user, overview: data.overview, htmlPath: path.join(dir, 'report.html'), htmlContent: renderDocument(data), options, home: dir, run });
   log('export ' + (run || month) + ' finished in ' + formatDuration(Math.max(0, Date.now() - started)));
   (res.notes || []).forEach((n) => log(`export: ${n}`));
 

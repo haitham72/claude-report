@@ -248,7 +248,8 @@ section.block{margin-top:18px}
   P.forEach(function (p) { if (p.tokenParts) { hasParts = true; Object.keys(parts).forEach(function (k) { parts[k] += p.tokenParts[k] || 0; }); } });
   var partSum = parts.input + parts.output + parts.cacheRead + parts.cacheCreate;
 
-  var html = '<header><div><h1>AI report</h1><p class="sub">' + [D.user ? '<b>' + esc(D.user) + '</b>' : '', esc(D.label), D.dateRange ? '' : esc(D.range)].filter(Boolean).join(' · ') + '</p></div><label class="theme">Theme <select id="theme"><option value="system">System</option><option value="light">Light</option><option value="dark">Dark</option></select></label></header>';
+  var named = (D.projects || []).map(function (p) { return p.name; }).filter(Boolean);
+  var html = '<header><div><h1>AI report' + (named.length && named.length <= 3 ? ' · ' + esc(named.join(', ')) : '') + '</h1><p class="sub">' + [D.user ? '<b>' + esc(D.user) + '</b>' : '', esc(D.label), D.dateRange ? '' : esc(D.range)].filter(Boolean).join(' · ') + '</p></div><label class="theme">Theme <select id="theme"><option value="system">System</option><option value="light">Light</option><option value="dark">Dark</option></select></label></header>';
 
   var hasOverview = D.overview || D.overviewStale || arr(D.failures).length;
   var review = D.promptingReview;
