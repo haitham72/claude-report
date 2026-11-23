@@ -3,12 +3,12 @@
 const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
-const { projectNameOf, projectId, gitRootOf, dayKey, redact, isEnvLeak, deepPrompt, stripDeepContext } = require('./scan');
+const { projectNameOf, projectId, gitRootOf, dayKey, redact, cleanTitle, isEnvLeak, deepPrompt, stripDeepContext } = require('./scan');
 
 function emptyProject(name) {
   return {
     name, totalTokens: 0, tokens: { input: 0, output: 0, cacheRead: 0, cacheCreate: 0, turns: 0 },
-    sessions: 0, repositories: [], promptCount: 0, prompts: [], interruptions: [], daily: {}, dailyTurns: {}, tools: {}, models: {},
+    sessions: 0, repositories: [], promptCount: 0, titles: [], prompts: [], interruptions: [], daily: {}, dailyTurns: {}, tools: {}, models: {},
     entrypoints: {}, hours: Array(24).fill(0), cache: { cold: 0, rebuilt: 0, afterIdle: 0, starts: 0 }
   };
 }
@@ -47,7 +47,21 @@ function userText(payload) {
   }).filter(Boolean).join('\n');
 }
 
-function activityFromSession(file, from, to, names, { identifyProjects, deep }) {
+// session id -> thread name, from ~/.codex/session_index.jsonl (later lines win).
+function readThreadNames(root) {
+  const out = new Map();
+  let raw;
+  try { raw = fs.readFileSync(path.join(path.dirname(root), 'session_index.jsonl'), 'utf8'); } catch { return out; }
+  for (const line of raw.split('\n')) {
+    try {
+      const r = JSON.parse(line);
+      if (typeof r?.id === 'string' && typeof r.thread_name === 'string') out.set(r.id, r.thread_name);
+    } catch { /* skip bad line */ }
+  }
+  return out;
+}
+
+function activityFromSession(file, from, to, names, { identifyProjects, deep, threadNames }) {
   let raw;
   try { raw = fs.readFileSync(file, 'utf8'); } catch { return []; }
   let cwd = '', model = '', turn = '', subagent = false;
@@ -55,6 +69,8 @@ function activityFromSession(file, from, to, names, { identifyProjects, deep }) 
   const projects = new Map();
   const seenPrompts = new Map();
   const session = path.basename(file, '.jsonl');
+  const threadName = deep ? '' : cleanTitle(threadNames?.get(session.slice(-36)));
+  let lastAt = null;
   const fields = ['input_tokens', 'cached_input_tokens', 'cache_write_input_tokens', 'output_tokens'];
 
   for (const line of raw.split('\n')) {
@@ -113,6 +129,7 @@ function activityFromSession(file, from, to, names, { identifyProjects, deep }) 
     } else continue;
 
     if (at < from) continue;
+    if (!lastAt || at > lastAt) lastAt = at;
     if (!names.has(cwd)) {
       const root = gitRootOf(cwd);
       const location = root || cwd;
@@ -146,6 +163,7 @@ function activityFromSession(file, from, to, names, { identifyProjects, deep }) 
       add(project.entrypoints, 'codex', tokens);
     }
   }
+  if (threadName && lastAt) for (const project of projects.values()) project.titles.push({ at: lastAt.toISOString(), text: threadName, source: 'codex' });
   return [...projects.values()];
 }
 
@@ -163,15 +181,21 @@ function mergeProjects(...sources) {
       for (const root of (p.repositories || [])) if (!merged.repositories.includes(root)) merged.repositories.push(root);
       for (const prompt of (p.prompts || [])) merged.prompts.push(prompt);
       merged.interruptions.push(...(p.interruptions || []));
+      merged.titles.push(...(p.titles || []));
     }
   }
-  for (const p of projects.values()) p.prompts.sort((a, b) => a.at.localeCompare(b.at));
+  for (const p of projects.values()) {
+    p.prompts.sort((a, b) => a.at.localeCompare(b.at));
+    const seen = new Set();
+    p.titles = p.titles.sort((a, b) => a.at.localeCompare(b.at)).filter((t) => !seen.has(t.text) && seen.add(t.text));
+  }
   return [...projects.values()].sort((a, b) => b.totalTokens - a.totalTokens);
 }
 
 function scanCodex(from, to, root = path.join(process.env.CODEX_HOME || path.join(os.homedir(), '.codex'), 'sessions'), options = {}) {
   const names = new Map();
-  return mergeProjects(readSessions(root, +from).flatMap((file) => activityFromSession(file, from, to, names, options)));
+  const threadNames = readThreadNames(root);
+  return mergeProjects(readSessions(root, +from).flatMap((file) => activityFromSession(file, from, to, names, { ...options, threadNames })));
 }
 
 module.exports = { scanCodex, mergeProjects, emptyProject };

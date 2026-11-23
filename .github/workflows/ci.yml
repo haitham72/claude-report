@@ -13,7 +13,8 @@ jobs:
       matrix:
         # The test suite has so far only been run on Windows. Add the other systems once they pass.
         os: [windows-latest]
-        node: [20, 22]
+        # 24 has node:sqlite built in, so the Antigravity and Cursor tests run instead of skipping.
+        node: [20, 22, 24]
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4

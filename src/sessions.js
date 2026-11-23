@@ -192,4 +192,4 @@ function groupOf(session, now) {
   return 'Earlier';
 }
 
-module.exports = { listSessions, ageLabel, groupOf, isUuid };
+module.exports = { listSessions, ageLabel, groupOf, isUuid, titleFrom };

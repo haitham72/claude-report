@@ -149,6 +149,27 @@ function migrateLegacy(newDir, oldDir = path.join(require('os').homedir(), '.ide
   }
 }
 
+// Removes runtime/<version>/ copies older than every path in `keep`, and the pre-0.11.2 unversioned
+// runtime/bin and runtime/src. Paths in `keep` (the hook settings.json runs, this editor's own copy)
+// are never touched. Best effort: a locked file just stays until next time.
+function pruneRuntimes(destDir, keep = []) {
+  const root = path.join(destDir, 'runtime');
+  const kept = keep.filter(Boolean).map((p) => path.resolve(p));
+  const floor = kept.map(runtimeVersionOf).reduce((a, b) => (cmpVersion(a, b) <= 0 ? a : b), [Infinity, 0, 0]);
+  const removed = [];
+  let names = [];
+  try { names = fs.readdirSync(root); } catch { return removed; }
+  for (const name of names) {
+    const dir = path.join(root, name);
+    const versioned = /^\d+\.\d+\.\d+$/.test(name);
+    if (!versioned && name !== 'bin' && name !== 'src') continue;
+    if (kept.some((p) => p.startsWith(dir + path.sep))) continue;
+    if (versioned && !(floor[0] !== Infinity && cmpVersion(runtimeVersionOf(path.join(dir, 'bin', 'hook.js')), floor) < 0)) continue;
+    try { fs.rmSync(dir, { recursive: true, force: true }); removed.push(name); } catch { /* locked: try again next start */ }
+  }
+  return removed;
+}
+
 // Connected means the setting is ours AND the script it runs exists; a dangling path never reports.
 const isConnected = (settings, exists = fs.existsSync) => {
   const sl = settings && settings.statusLine;
@@ -157,4 +178,4 @@ const isConnected = (settings, exists = fs.existsSync) => {
   return !!p && exists(p);
 };
 
-module.exports = { hookCommand, hookPathOf, runtimeVersionOf, planInstall, applyInstall, planUninstall, applyUninstall, installRuntime, migrateLegacy, isWired: (settings) => isOurs(settings && settings.statusLine), isConnected };
+module.exports = { hookCommand, hookPathOf, runtimeVersionOf, pruneRuntimes, planInstall, applyInstall, planUninstall, applyUninstall, installRuntime, migrateLegacy, isWired: (settings) => isOurs(settings && settings.statusLine), isConnected };

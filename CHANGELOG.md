@@ -16,6 +16,9 @@ All notable changes are listed here, newest first.
 - Picks a local model when you have not chosen one: the loaded model, else the largest model that fits in free GPU memory with at least 16k context, else the smallest.
 - Asks before loading a model that does not fit the GPU memory free right now. It reports the free and needed memory and offers Load anyway, Use a model that fits, or Recheck. When the model fits but context would be under 16k tokens, it says the context will be limited and offers Continue, Use a model that fits, or Recheck. Cancel ends the run quietly. With no NVIDIA card there is nothing to measure, so there is no prompt.
 - Removes the hard refusal "This model would exceed the 90% GPU memory budget". A load that really runs out of memory now says so and names models that fit.
+- Gives each project card its session titles as context: the titles Claude Code, Codex, Antigravity and Cursor already keep for each session (one line each, newest first, at most 30, redacted). They take at most 15% of the prompt budget and are never quoted as evidence.
+- Removes hook copies older than the one in use from `~/.claude-report/runtime/` on startup, along with the unversioned copy from before 0.11.2.
+- Antigravity reads prompt text only for conversations in the report window.
 
 ## 0.11.2
 

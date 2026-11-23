@@ -3,7 +3,7 @@
 const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
-const { projectNameOf, projectId, gitRootOf, dayKey, redact, isEnvLeak, deepPrompt, stripDeepContext } = require('./scan');
+const { projectNameOf, projectId, gitRootOf, dayKey, redact, cleanTitle, isEnvLeak, deepPrompt, stripDeepContext } = require('./scan');
 const { mergeProjects, emptyProject } = require('./codex-activity');
 const { querySqlite, sqliteAvailable } = require('./sqlite-read');
 
@@ -41,7 +41,7 @@ function composerRows(file, ids) {
     const chunk = ids.slice(i, i + 400);
     const rows = querySqlite(file,
       `SELECT key, ${J('$.workspaceIdentifier.uri.fsPath')} fs, ${J('$.workspaceIdentifier.uri.external')} ext, ` +
-      `${J('$.trackedGitRepos[0].repoPath')} repo, ${J('$.modelConfig.modelName')} model, ` +
+      `${J('$.trackedGitRepos[0].repoPath')} repo, ${J('$.modelConfig.modelName')} model, ${J('$.name')} name, ` +
       `${J('$.subagentInfo.parentComposerId')} parent, ${J('$.isBestOfNSubcomposer')} bon, ` +
       `${J('$.subagentComposerIds')} subs, ${J('$.subComposerIds')} subs2 ` +
       `FROM cursorDiskKV WHERE key IN (${chunk.map(() => '?').join(',')})`, chunk.map((id) => `composerData:${id}`));
@@ -96,10 +96,12 @@ function scanCursor(from, to, file = defaultFile(), options = {}) {
       const project = { ...emptyProject(name), ...(pid ? { id: pid, location } : {}) };
       if (root) project.repositories.push(root);
       let active = false;
+      let lastAt = null;
       for (const b of list) {
         const at = new Date(b.c);
         if (!Number.isFinite(+at) || at < from || at >= to) continue;
         const day = dayKey(at);
+        if (!lastAt || at > lastAt) lastAt = at;
         if (b.t === 1) {
           if (sub) continue;
           const raw = typeof b.txt === 'string' ? b.txt.trim() : '';
@@ -125,6 +127,8 @@ function scanCursor(from, to, file = defaultFile(), options = {}) {
       }
       if (!active) continue;
       if (!sub) project.sessions = 1;
+      const title = deep || sub ? '' : cleanTitle(c.name);
+      if (title) project.titles.push({ at: lastAt.toISOString(), text: title, source: 'cursor' });
       perSession.push(project);
     }
     return mergeProjects(perSession);

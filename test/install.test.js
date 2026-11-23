@@ -119,3 +119,21 @@ test('several editors share one hook: newest version wins, never downgrades, dan
   assert.strictEqual(isConnected(wired(at('0.11.2')), all), true);
   assert.strictEqual(isConnected({ statusLine: { type: 'command', command: 'bash ~/x.sh' } }, all), false);
 });
+
+test('pruneRuntimes drops copies older than the hook in use, never the kept ones or newer ones', () => {
+  const fs = require('fs');
+  const os = require('os');
+  const { pruneRuntimes } = require('../src/install');
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), 'prune-'));
+  const make = (...parts) => { const d = path.join(home, 'runtime', ...parts); fs.mkdirSync(d, { recursive: true }); fs.writeFileSync(path.join(d, 'hook.js'), ''); };
+  for (const v of ['0.9.1', '0.11.2', '0.12.0', '0.13.0']) make(v, 'bin');
+  make('bin'); // unversioned, pre-0.11.2
+  fs.mkdirSync(path.join(home, 'runtime', 'notes'));
+  const hook = (v) => path.join(home, 'runtime', v, 'bin', 'hook.js');
+  const removed = pruneRuntimes(home, [hook('0.12.0'), hook('0.12.0')]).sort();
+  assert.deepStrictEqual(removed, ['0.11.2', '0.9.1', 'bin']);
+  assert.deepStrictEqual(fs.readdirSync(path.join(home, 'runtime')).sort(), ['0.12.0', '0.13.0', 'notes']);
+  // Nothing known in use: nothing versioned is removed.
+  make('0.1.0', 'bin');
+  assert.deepStrictEqual(pruneRuntimes(home, []), []);
+});

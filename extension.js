@@ -10,7 +10,7 @@ const { readLive, SHARED_USAGE } = require('./src/live');
 const { SOURCES, labelOf, productList } = require('./src/sources');
 const { detectHost, defaultSource } = require('./src/host');
 const { readPlanHistory } = require('./src/plan-history');
-const { planInstall, applyInstall, applyUninstall, installRuntime, migrateLegacy, isConnected, isWired } = require('./src/install');
+const { planInstall, applyInstall, applyUninstall, installRuntime, migrateLegacy, isConnected, isWired, hookPathOf, pruneRuntimes } = require('./src/install');
 const { runClaude, MODELS, EFFORTS } = require('./src/claude');
 const { generateReports, expandedProjectWords } = require('./src/generate');
 const { buildData, renderHtml, renderDocument, withExampleHours } = require('./src/render');
@@ -1276,11 +1276,19 @@ function syncRuntime(context) {
   const nodePath = resolveNode();
   if (!nodePath) return;
   const plan = planInstall(settings, hookPath, nodePath);
-  if (plan.error || plan.already) return;
-  try {
-    applyInstall({ settingsPath: CLAUDE_SETTINGS, hookPath, nodePath, configDir: HOME_DIR });
-    log(plan.changes.join('; '));
-  } catch (e) { log(`statusLine update failed: ${e.message}`); }
+  if (!plan.error && !plan.already) {
+    try {
+      applyInstall({ settingsPath: CLAUDE_SETTINGS, hookPath, nodePath, configDir: HOME_DIR });
+      log(plan.changes.join('; '));
+    } catch (e) { log(`statusLine update failed: ${e.message}`); return; }
+  }
+  // Drop hook copies older than the one in use; keep this editor's own.
+  let inUse = null;
+  try { inUse = hookPathOf(JSON.parse(fs.readFileSync(CLAUDE_SETTINGS, 'utf8')).statusLine.command); } catch { /* unreadable: keep everything */ }
+  if (inUse) {
+    const removed = pruneRuntimes(HOME_DIR, [inUse, hookPath]);
+    if (removed.length) log(`removed old hook copies: ${removed.join(', ')}`);
+  }
 }
 
 let timer = null;

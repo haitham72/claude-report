@@ -16,7 +16,7 @@ const os = require('node:os');
 const path = require('node:path');
 const fs = require('node:fs');
 const { fileURLToPath } = require('node:url');
-const { projectNameOf, projectId, gitRootOf, dayKey, redact, isEnvLeak, deepPrompt, stripDeepContext } = require('./scan');
+const { projectNameOf, projectId, gitRootOf, dayKey, redact, cleanTitle, isEnvLeak, deepPrompt, stripDeepContext } = require('./scan');
 const { emptyProject } = require('./codex-activity');
 const { querySqlite, sqliteAvailable } = require('./sqlite-read');
 
@@ -69,9 +69,17 @@ function scanAntigravity(from, to, root = path.join(process.env.ANTIGRAVITY_HOME
     rows = querySqlite(file,
       'SELECT conversation_id, preview, title, step_count, last_modified_time, last_user_input_time, last_user_input_step_index, ' +
       'workspace_uris, agent_name, parent_conversation_id, nesting_depth FROM conversation_summaries');
+    // Prompt text is only needed for conversations whose last user input falls in the window.
+    const wanted = rows.filter((r) => { const t = parseTime(r.last_user_input_time); return t && t >= from && t < to; })
+      .map((r) => r.conversation_id);
+    chunks = [];
     try {
-      chunks = querySqlite(file,
-        'SELECT conversation_id, user_body AS body, CAST(user_step_byte_offsets AS TEXT) AS offsets FROM conversations_fts WHERE chunk_index >= 0 ORDER BY conversation_id, chunk_index');
+      for (let i = 0; i < wanted.length; i += 400) {
+        const ids = wanted.slice(i, i + 400);
+        chunks.push(...querySqlite(file,
+          'SELECT conversation_id, user_body AS body, CAST(user_step_byte_offsets AS TEXT) AS offsets FROM conversations_fts ' +
+          `WHERE chunk_index >= 0 AND conversation_id IN (${ids.map(() => '?').join(',')}) ORDER BY conversation_id, chunk_index`, ids));
+      }
     } catch { chunks = []; }
   } catch { return []; }
 
@@ -117,6 +125,8 @@ function scanAntigravity(from, to, root = path.join(process.env.ANTIGRAVITY_HOME
       }
       if (subagent) continue;
       project.sessions++;
+      const title = deep ? '' : cleanTitle(String(row.title || '').trim() || String(row.preview || '').trim());
+      if (title) project.titles.push({ at: (userAt || modified).toISOString(), text: title, source: 'antigravity' });
       if (!userIn) continue;
       const raw = (latestUserText(byConversation.get(row.conversation_id) || [], Number(row.last_user_input_step_index)) ||
         row.preview || row.title || '').trim();

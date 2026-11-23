@@ -47,14 +47,21 @@ function sliceProject(project, { maxPrompts = 60, maxChars = Infinity } = {}) {
   const sampledInterruptions = interruptions.length > 8
     ? Array.from({ length: 8 }, (_, i) => interruptions[Math.round(i * (interruptions.length - 1) / 7)])
     : interruptions;
+  // Titles are cheap context, newest first, and trimmed before prompts: at most 30, within 15% of the budget.
+  let seen = 0;
+  const titles = (project.titles || []).filter((t) => t && typeof t.text === 'string' && t.text && typeof t.at === 'string')
+    .slice().sort((a, b) => b.at.localeCompare(a.at)).slice(0, 30).filter((t) => (seen += t.text.length + 16) <= maxChars * 0.15)
+    .map((t) => `${t.at.slice(0, 10)} ${t.text}`);
+  const titleChars = titles.reduce((n, t) => n + t.length + 4, 0);
   return {
     project: project.name,
     git: summarizeGit(project.git),
     totalTokens: project.totalTokens,
     sessions: project.sessions,
     ...(sampledInterruptions.length ? { interruptions: sampledInterruptions } : {}),
+    ...(titles.length ? { titles } : {}),
     prompts: picked.map((p) => ({
-      at: p.at, text: p.text.slice(0, Math.floor(maxChars / Math.max(1, picked.length))), source: p.source || 'claude'
+      at: p.at, text: p.text.slice(0, Math.floor((maxChars - titleChars) / Math.max(1, picked.length))), source: p.source || 'claude'
     }))
   };
 }
@@ -75,7 +82,8 @@ function buildProjectPrompt(slice, { estimateTime = false, previousWords, draft 
     'Estimate the effort for the same task scope with and without AI in whole minutes. Include work the person still had to do, including review or rework when evident.',
     'Use approximate, conservative values. Set both fields to null if the task is too vague to estimate, and for any example whose status is requested, because no completed work is recorded for it. These are estimates, so never present them as observed time.'
   ].join(' ') : 'Leave time and savings out of the report.';
-  const prompt = [skillBody('project-ai-report'), coverage, limitsText(), timing, '', '## This project', JSON.stringify(slice)];
+  const context = slice.titles ? 'The titles list is one line per session, for orientation only. It is not evidence of work done and never a source to quote.' : '';
+  const prompt = [skillBody('project-ai-report'), coverage, ...(context ? [context] : []), limitsText(), timing, '', '## This project', JSON.stringify(slice)];
   if (draft) prompt.push('', '## Revise the first draft',
     `The draft has ${expandedProjectWords(draft)} expanded words. Return the full report with about ${target} supported expanded words. Preserve the distinct examples and their sources. Add omitted requirements, decisions, corrections, tests and open questions. For each substantial example, write a detail paragraph of at least two complete sentences. Use facts from the project evidence above.`,
     JSON.stringify(draft));

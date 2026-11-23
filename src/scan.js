@@ -7,6 +7,7 @@ const fs = require('fs');
 const os = require('os');
 const path = require('path');
 
+const { titleFrom } = require('./sessions');
 const PROJECTS_DIR = path.join(os.homedir(), '.claude', 'projects');
 const MAX_PROMPT_CHARS = 400;
 const COLD_MIN_PROMPT = 20000; // smaller prompts are never worth caching
@@ -45,6 +46,12 @@ function scrubDeep(value) {
   if (Array.isArray(value)) return value.map(scrubDeep);
   if (value && typeof value === 'object') return Object.fromEntries(Object.entries(value).map(([k, v]) => [k, scrubDeep(v)]));
   return value;
+}
+
+// One-line session title for the report: redacted, capped, and never an env leak.
+function cleanTitle(text) {
+  const t = typeof text === 'string' ? text.replace(/\s+/g, ' ').trim() : '';
+  return !t || isEnvLeak(t) ? '' : redact(t).slice(0, 120);
 }
 
 function redact(text) {
@@ -129,6 +136,7 @@ function scanPeriod(from, to, { identifyProjects = false, deep = false } = {}) {
     try { lines = fs.readFileSync(file, 'utf8').split('\n'); } catch { continue; }
 
     let cwd = '';
+    const heads = { ai: '', custom: '' };
     let first = null;
     let last = null;
     const tokens = { input: 0, output: 0, cacheRead: 0, cacheCreate: 0, turns: 0 };
@@ -151,6 +159,7 @@ function scanPeriod(from, to, { identifyProjects = false, deep = false } = {}) {
       try { r = JSON.parse(line); } catch { continue; }
       if (r.cwd && !cwd) cwd = r.cwd;
       if (r.entrypoint && !entry) entry = r.entrypoint; // cli, claude-vscode, claude-desktop ...
+      titleFrom(r, heads); // title lines carry no timestamp
       const d = r.timestamp ? new Date(r.timestamp) : null;
       if (!d || isNaN(d)) continue;
       if (d < from || d >= to) continue;
@@ -219,12 +228,14 @@ function scanPeriod(from, to, { identifyProjects = false, deep = false } = {}) {
     const id = identifyProjects && location ? projectId(location) : undefined;
     const key = id || name;
     if (!projects.has(key)) {
-      projects.set(key, { name, id, location, tokens: { input: 0, output: 0, cacheRead: 0, cacheCreate: 0, turns: 0 }, sessions: new Set(), repositories: new Set(), activeMs: 0, prompts: [], interruptions: [], daily: {}, dailyTurns: {}, entrypoints: {}, cache: { cold: 0, rebuilt: 0, afterIdle: 0, starts: 0 }, tools: {}, models: {}, hours: new Array(24).fill(0) });
+      projects.set(key, { name, id, location, tokens: { input: 0, output: 0, cacheRead: 0, cacheCreate: 0, turns: 0 }, sessions: new Set(), repositories: new Set(), activeMs: 0, titles: [], prompts: [], interruptions: [], daily: {}, dailyTurns: {}, entrypoints: {}, cache: { cold: 0, rebuilt: 0, afterIdle: 0, starts: 0 }, tools: {}, models: {}, hours: new Array(24).fill(0) });
     }
     const p = projects.get(key);
     if (root) p.repositories.add(root);
     for (const k of Object.keys(tokens)) p.tokens[k] += tokens[k];
     p.sessions.add(sessionId);
+    const title = deep ? '' : cleanTitle(heads.custom || heads.ai);
+    if (title) p.titles.push({ at: last.toISOString(), text: title, source: 'claude' });
     p.activeMs += last - first;
     p.prompts.push(...prompts);
     p.interruptions.push(...interruptions);
@@ -252,6 +263,7 @@ function scanPeriod(from, to, { identifyProjects = false, deep = false } = {}) {
       repositories: [...p.repositories],
       sessionSpanHours: +(p.activeMs / 3600000).toFixed(1),
       promptCount: p.prompts.length,
+      titles: p.titles.sort((a, b) => a.at.localeCompare(b.at)),
       daily: p.daily,
       dailyTurns: p.dailyTurns,
       entrypoints: p.entrypoints,
@@ -298,4 +310,4 @@ function dayList(from, to) {
   return out;
 }
 
-module.exports = { scanMonth, scanDays, scanPeriod, lastDaysRange, dayList, dayKey, projectNameOf, projectId, gitRootOf, isEnvLeak, scrubDeep, human, redact, deepPrompt, stripDeepContext };
+module.exports = { scanMonth, scanDays, scanPeriod, lastDaysRange, dayList, dayKey, projectNameOf, projectId, gitRootOf, isEnvLeak, scrubDeep, human, redact, cleanTitle, deepPrompt, stripDeepContext };
