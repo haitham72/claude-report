@@ -10,7 +10,8 @@ Start with **Claude Report: Diagnose Status Bar**. It prints what every live sou
 
 ## 5h and 7d are missing
 
-- With `claudeReport.planUsage.enabled` on (default), Claude Report polls Anthropic’s usage API using your local Claude Code login — no Connect step. Run **Claude Report: Diagnose Status Bar** and check `plan usage route:` (`oauth-api`, `shared-fresh`, `memory`, or `notoken`).
+- With `claudeReport.planUsage.enabled` on (default), Claude Report polls Anthropic’s usage API using your local Claude Code login — no Connect step. Run **Claude Report: Diagnose Status Bar** and check `plan usage route:`.
+- Routes: `oauth-api` (fresh from Anthropic), `shared-fresh` / `shared-stale` / `memory` / `memory-stale` (local cache), `notoken` (no Claude.ai login), `expired` (token past `expiresAt` or 401/403 — run Claude Code once to refresh), `ratelimited` / `backoff` (waiting after 429 or another failure), `error`, `disabled`.
 - `notoken` means Claude Code is not signed in with a Claude.ai login (API-key-only does not work for this path). Sign in with Claude Code, or use the status-line hook instead.
 - The status-line hook is a second route. Open **Connect** and make sure **Status line hook** says Connected, then press **Test**.
 - They need a Pro, Max, Team or Ultra plan. The last good values are kept until the window resets, and the tooltip says how old they are.

@@ -617,8 +617,22 @@ class Panel {
 
   async push(force) {
     const request = ++this.stateRequest;
-    await refreshPlanUsageAsync();
-    if (request !== this.stateRequest) return;
+    // Post immediately; refresh plan usage in the background so a slow network cannot stall Connect/toggles.
+    refreshPlanUsageAsync().then(() => {
+      if (request !== this.stateRequest || !this.view) return;
+      try {
+        const live = this.state();
+        this.post({
+          type: 'state',
+          d: {
+            ...live,
+            ...(this.lastScan?.monthLabel === live.monthLabel ? this.lastScan : null),
+            live: live.live,
+            planHistory: live.planHistory,
+          },
+        });
+      } catch (e) { log(`plan usage refresh: ${e && e.message ? e.message : e}`); }
+    });
     const base = this.state();
     if (this.lastScan?.monthLabel === base.monthLabel) Object.assign(base, this.lastScan);
     this.post({ type: 'state', d: { ...base } });

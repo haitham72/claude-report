@@ -26,7 +26,7 @@ Report evidence comes from prompts, activity counts, Git commit metadata and tim
 Claude Report keeps its working files under `~/.claude-report/`.
 
 - `live/`, `windows.json`, `usage-history.json`: model, context, plan usage and working folder from the status line and/or the plan-usage poll. The trend history stores timestamps, plan percentages and reset times for up to eight days. No prompts.
-- `%TEMP%/claude_oauth_usage.json` (or `$TMPDIR`): last plan-usage payload shared with other local status tools. Utilization numbers only.
+- `%TEMP%/claude_oauth_usage.json` (or `$TMPDIR`): last plan-usage payload shared with other local status tools. Only the five-hour and weekly utilization (and reset times) are written.
 - `config.json`: your previous status line command, kept so it can be restored.
 - `prefs.json` keeps your Cloud or Local choice, engine, model and any previously entered time evidence. New time entries are saved with the report example.
 - `runtime/`: a copy of the hook script.

@@ -2,6 +2,10 @@
 
 All notable changes are listed here, newest first.
 
+## 0.12.3
+
+- Fixes plan-usage freezing after the first OAuth success: reading a fresh shared cache no longer rewrites the file (that reset its mtime and blocked further API calls, and could override a newer status-line hook reading). Invalid shared payloads are ignored. Failures other than success back off; expired tokens are detected; the sidebar no longer waits on the network before updating; macOS Keychain lookups time out.
+
 ## 0.12.2
 
 - Plan usage (5-hour and weekly) polls Anthropic’s usage API with the local Claude Code login, the same numbers as `/usage`, without requiring Connect. Routes are tried in order: memory, shared temp cache, OAuth API, then stale cache; the status-line hook remains another writer into the same store. Setting `claudeReport.planUsage.enabled` turns the poll off.

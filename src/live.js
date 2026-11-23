@@ -16,10 +16,11 @@ function homeDir(dirname = __dirname, env = process.env) {
 const DEFAULT_DIR = homeDir();
 
 // Renames over a file that Windows may briefly lock; the temp file never outlives the call.
-function writeTmpRename(file, text) {
-  const tmp = `${file}.${process.pid}.tmp`;
+function writeTmpRename(file, text, { mode } = {}) {
+  const tmp = `${file}.${process.pid}.${Date.now()}.tmp`;
   try {
-    fs.writeFileSync(tmp, text);
+    const opts = mode == null ? undefined : { mode };
+    fs.writeFileSync(tmp, text, opts);
     for (let i = 0; ; i++) {
       try { fs.renameSync(tmp, file); return; } catch (e) {
         if (i >= 4 || !['EPERM', 'EBUSY', 'EACCES'].includes(e.code)) throw e;
@@ -213,5 +214,5 @@ function readLive({ dir = DEFAULT_DIR, now = Date.now(), maxAgeMs = 6 * 3600 * 1
 
 module.exports = {
   homeDir, DEFAULT_DIR, SHARED_USAGE, SHARED_MAX_AGE_MS,
-  writeLive, readLive, readHistory, readSharedUsage, ingestUsagePayload, windowFromUtilization,
+  writeLive, writeTmpRename, readLive, readHistory, readSharedUsage, ingestUsagePayload, windowFromUtilization,
 };
