@@ -61,7 +61,7 @@ test('plan usage shows the current percentage and reset countdown without extrap
   const live = { fiveHour: { pct: 1, resetsAt: reset, seenAt: now } };
   const short = [{ t: now - 5315, s: 0, sr: reset }];
   const html = M.render({ now, live, history: short });
-  assert.match(html, />1%<.*>2h 0m</);
+  assert.match(html, />1%<.*Resets in 2h 0m · /);
   assert.match(html, /Available after a short period of activity/);
   assert.doesNotMatch(html, /%\/h|Full in/);
   const enough = [{ t: now - hour / 2, s: 0, sSource: 'control' }, ...short];
@@ -69,6 +69,21 @@ test('plan usage shows the current percentage and reset countdown without extrap
   assert.match(forecast, /\+2\.0%\/h/);
   assert.match(forecast, /Resets before full/);
   assert.match(forecast, /Includes Claude Control/);
+});
+
+test('gauges and bar rows stack: label and figure on one line, the bar below, details last', () => {
+  const now = new Date(2026, 10, 24, 9, 0).getTime();
+  const live = {
+    fiveHour: { pct: 68, resetsAt: (now + 90 * 60000) / 1000, seenAt: now },
+    sevenDay: { pct: 12, resetsAt: (now + 3 * 86400e3) / 1000, seenAt: now },
+  };
+  const html = M.render({ ...D, now, live, history: [] });
+  assert.match(html, /<div class="plan-head"><span>5-hour session<\/span><strong[^>]*>68%<\/strong><\/div><span class="plan-track"/);
+  assert.match(html, /Resets in 1h 30m · \d/, 'a reset later today shows only the time');
+  const weekday = new Date(now + 3 * 86400e3).toLocaleDateString([], { weekday: 'short' });
+  assert.ok(html.includes('Resets in 3d 0h · ' + weekday + ' '), 'a later reset names the day, kept on one line with its time');
+  assert.match(html, /<span class="hlbl" title="Bash">Bash<\/span><span class="hval">\d+<\/span><span class="herr bad">20% failed<\/span><\/div><span class="hbar">/);
+  assert.match(M.render({ ...D, now, live: {}, history: [] }), /<span>Weekly<\/span><\/div><div class="plan-sub">Waiting for reading/);
 });
 
 test('project names are escaped', () => {

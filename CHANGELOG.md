@@ -2,6 +2,10 @@
 
 All notable changes are listed here, newest first.
 
+## 0.12.5
+
+- Metrics rows stack like Claude Code's own usage panel, so a narrow sidebar no longer cuts figures off. Plan gauges put the label and percentage on one line, the bar at full width below, and the reset under it ("Resets in 1h 30m · 2:10 AM", with the weekday when it is after today). Burn rates put the estimate on its own line. Tools, By model and By project put the name and figures above a full-width bar, and a tool's failure rate now reads "7% failed". Trend labels shorten instead of running into their percentage.
+
 ## 0.12.4
 
 - Plan usage no longer loses newer status-line readings: reading an older shared usage file kept only readings up to that file's time, deleting newer points from the Metrics history and replacing the newer saved window. Login expiry is read in milliseconds, as Claude Code writes it, so an expired login is recognised before a request is sent. The sidebar no longer falls back to older plan numbers when the API answers before its scan finishes, and it builds its state once per refresh instead of twice.

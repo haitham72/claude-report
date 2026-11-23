@@ -1,5 +1,4 @@
-/* Metri    root.addEventListener('click', toggle);
-cs tab. Ported in structure from claude-control (MIT, lucasdonordeste). */
+/* Metrics tab. Ported in structure from claude-control (MIT, lucasdonordeste). */
 (function (window) {
   'use strict';
   var SLOTS = 12;
@@ -22,6 +21,15 @@ cs tab. Ported in structure from claude-control (MIT, lucasdonordeste). */
     m = Math.max(1, Math.ceil(m));
     if (m >= 1440) return Math.floor(m / 1440) + 'd ' + Math.floor(m % 1440 / 60) + 'h';
     return m >= 60 ? Math.floor(m / 60) + 'h ' + m % 60 + 'm' : m + 'm';
+  }
+
+  // "Resets in 1h 30m · 2:10 AM"; a reset after today also names the weekday, as Claude Code's panel does.
+  // The day and time are held together with no-break spaces, so a narrow sidebar wraps after the dot.
+  function resetText(resetMs, now) {
+    var at = new Date(resetMs);
+    var day = at.toDateString() === new Date(now).toDateString() ? '' : at.toLocaleDateString([], { weekday: 'short' }) + ' ';
+    var when = (day + at.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })).replace(/\s/g, ' ');
+    return 'Resets in ' + minutesLabel((resetMs - now) / 60000) + ' · ' + when;
   }
 
   function usageColor(pct) {
@@ -89,16 +97,17 @@ cs tab. Ported in structure from claude-control (MIT, lucasdonordeste). */
       return '<div class="col' + (v ? '' : ' zero') + '" title="' + esc(titleOf(i)) + '"><span class="col-b" style="height:' + h + '%"></span></div>';
     }).join('') + '</div>';
   }
-  // One row helper for Tools, By model and By project.
+  // One row helper for Tools, By model and By project: name and figures on one line, the bar below
+  // at full width, so long names and narrow sidebars keep room for both.
   function rows(items) {
     var top = Math.max.apply(null, items.map(function (i) { return i.value; }).concat([1]));
     return items.map(function (i) {
-      return '<div class="hrow"><span class="hlbl" title="' + esc(i.name) + '">' +
+      return '<div class="hrow"><div class="hhead"><span class="hlbl" title="' + esc(i.name) + '">' +
         (i.color ? '<i style="display:inline-block;width:6px;height:6px;border-radius:50%;margin-right:5px;background:' + i.color + '"></i>' : '') + esc(i.name) + '</span>' +
-        '<span class="hbar"><span class="hfill" style="width:' + Math.max(2, i.value / top * 100) + '%' +
-        (i.color ? ';background:' + i.color + ';opacity:1' : '') + '"></span></span>' +
         '<span class="hval">' + esc(i.display) + '</span>' +
-        (i.err != null ? '<span class="herr' + (i.bad ? ' bad' : '') + '">' + esc(i.err) + '</span>' : '') + '</div>';
+        (i.err ? '<span class="herr' + (i.bad ? ' bad' : '') + '">' + esc(i.err) + '</span>' : '') + '</div>' +
+        '<span class="hbar"><span class="hfill" style="width:' + Math.max(2, i.value / top * 100) + '%' +
+        (i.color ? ';background:' + i.color + ';opacity:1' : '') + '"></span></span></div>';
     }).join('');
   }
 
@@ -131,8 +140,8 @@ cs tab. Ported in structure from claude-control (MIT, lucasdonordeste). */
   function burnLine(label, b) {
     if (!b) return '';
     var txt = b.resetsFirst ? 'Resets before full' : b.left == null ? 'Stable' : b.left <= 0 ? 'Limit reached' : 'Full in ~' + minutesLabel(b.left);
-    return '<div class="burn' + (!b.resetsFirst && b.left != null && b.left < 60 ? ' burn-danger' : '') + '"><span class="burn-l">' + esc(label) +
-      '</span><span class="burn-r">' + esc((b.rate > 0.05 ? '+' : '') + b.rate.toFixed(1)) + '%/h</span><span class="burn-e" title="' + esc(txt) + '">' + esc(txt) + '</span></div>';
+    return '<div class="burn' + (!b.resetsFirst && b.left != null && b.left < 60 ? ' burn-danger' : '') + '"><div class="plan-head"><span class="burn-l">' + esc(label) +
+      '</span><span class="burn-r">' + esc((b.rate > 0.05 ? '+' : '') + b.rate.toFixed(1)) + '%/h</span></div><div class="burn-e" title="' + esc(txt) + '">' + esc(txt) + '</div></div>';
   }
 
   function planUsage(live, history, now) {
@@ -140,15 +149,16 @@ cs tab. Ported in structure from claude-control (MIT, lucasdonordeste). */
     PLAN.forEach(function (spec) {
       var reading = live[spec.window];
       var resetMs = reading && reading.resetsAt * 1000;
+      // Stacked like Claude Code's own panel: label and percentage, the full-width bar, then the reset.
       if (!reading || !Number.isFinite(reading.pct) || (resetMs && resetMs <= now)) {
-        gauges += '<div class="plan-window"><span>' + spec.label + '</span><span class="plan-wait">Waiting for reading</span></div>';
+        gauges += '<div class="plan-window"><div class="plan-head"><span>' + spec.label + '</span></div><div class="plan-sub">Waiting for reading</div></div>';
         return;
       }
       var pct = Math.max(0, Math.min(100, reading.pct));
-      var reset = resetMs ? '<span title="' + esc('Resets ' + new Date(resetMs).toLocaleString()) + '">' + minutesLabel((resetMs - now) / 60000) + '</span>' : '<span>—</span>';
+      var reset = resetMs ? '<div class="plan-sub" title="' + esc('Resets ' + new Date(resetMs).toLocaleString()) + '">' + esc(resetText(resetMs, now)) + '</div>' : '';
       var time = Number.isFinite(reading.seenAt) ? ' title="' + esc('Measured ' + new Date(reading.seenAt).toLocaleString()) + '"' : '';
-      gauges += '<div class="plan-window"' + time + '><span>' + spec.label + '</span><span class="plan-track" aria-hidden="true"><span style="width:' + pct +
-        '%;background:' + usageColor(pct) + '"></span></span><strong style="color:' + usageColor(pct) + '">' + Math.round(pct) + '%</strong>' + reset + '</div>';
+      gauges += '<div class="plan-window"' + time + '><div class="plan-head"><span>' + spec.label + '</span><strong style="color:' + usageColor(pct) + '">' + Math.round(pct) + '%</strong></div>' +
+        '<span class="plan-track" aria-hidden="true"><span style="width:' + pct + '%;background:' + usageColor(pct) + '"></span></span>' + reset + '</div>';
       forecast += burnLine(spec.label, burn(history, spec, reading, now));
     });
     return scope('Plan usage', 'Claude plan') + '<div class="plan-panel">' + gauges + '</div>' + scope('Burn rate', 'Estimate') +
@@ -260,7 +270,7 @@ cs tab. Ported in structure from claude-control (MIT, lucasdonordeste). */
       var calls = tl.reduce(function (n, t) { return n + t.calls; }, 0);
       h += scope('Tools', kfmt(calls) + ' calls') + rows(tl.slice(0, 8).map(function (t) {
         var pct = t.calls ? Math.round(t.fails / t.calls * 100) : 0;
-        return { name: t.name, value: t.calls, display: kfmt(t.calls), err: t.fails ? pct + '%' : '', bad: pct >= 10 };
+        return { name: t.name, value: t.calls, display: kfmt(t.calls), err: t.fails ? pct + '% failed' : '', bad: pct >= 10 };
       }));
     }
 

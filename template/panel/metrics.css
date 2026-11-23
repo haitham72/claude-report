@@ -16,12 +16,18 @@
 .empty { padding: 7px 16px; font-size: 11px; color: var(--mute2); font-style: italic; }
 .usenote { font-family: var(--mono); font-size: 9px; color: var(--mute2); padding: 6px 14px 2px; line-height: 1.5; }
 .sparkrow { padding: 3px 14px 12px; }
-.sparklbl { display: flex; justify-content: space-between; font-family: var(--mono); font-size: 10px; color: var(--mute); margin-bottom: 4px; }
+.sparklbl { display: flex; justify-content: space-between; gap: 8px; font-family: var(--mono); font-size: 10px; color: var(--mute); margin-bottom: 4px; }
+.sparklbl > span:first-child { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .plan-panel { margin: 3px 14px 1px; padding: 4px 9px; border: 1px solid var(--hair); border-radius: 7px; }
-.plan-window { display: grid; grid-template-columns: minmax(77px, max-content) minmax(16px, 1fr) 4ch minmax(44px, max-content); align-items: center; gap: 7px; min-height: 26px; font: 10px var(--mono); color: var(--mute); }
-.plan-window strong, .plan-window > span:last-child { text-align: right; }
-.plan-wait { grid-column: 2 / -1; color: var(--mute2); }
-.plan-track { height: 5px; overflow: hidden; border-radius: 4px; background: var(--hair); }
+/* Gauges, burn rates and bar rows stack like Claude Code's own panel: label and figure on one line,
+   the bar below at full width, details under it. A narrow sidebar then never cuts a figure off. */
+.plan-window { display: flex; flex-direction: column; gap: 4px; padding: 5px 0; font: 10px var(--mono); color: var(--mute); }
+.plan-head { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; min-width: 0; }
+.plan-head > span:first-child { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.plan-window .plan-head > span:first-child { font-size: 11px; color: var(--vscode-foreground); }
+.plan-window strong { font-size: 11px; flex: 0 0 auto; }
+.plan-sub { color: var(--mute2); font-size: 9.5px; line-height: 1.35; }
+.plan-track { display: block; height: 6px; overflow: hidden; border-radius: 4px; background: var(--hair); }
 .plan-track > span { display: block; height: 100%; border-radius: inherit; }
 .spark { width: 100%; height: 50px; display: block; }
 .spark-grid { stroke: var(--hair); stroke-width: .7; fill: none; }
@@ -43,9 +49,9 @@
 .cache-h { font-size: 11.5px; font-weight: 600; }
 .cache-d { font-size: 10.5px; color: var(--mute2); line-height: 1.45; margin-top: 2px; }
 .cache-n { font-family: var(--mono); font-size: 9px; color: var(--mute2); margin-top: 4px; }
-.burn { display: flex; align-items: center; gap: 8px; margin: 5px 0; font-family: var(--mono); font-size: 10px; }
-.burn-l { color: var(--mute); width: 77px; flex: 0 0 auto; }
-.burn-r { color: var(--vscode-foreground); width: 54px; flex: 0 0 auto; }
+.burn { display: flex; flex-direction: column; gap: 2px; margin: 6px 0; font-family: var(--mono); font-size: 10px; }
+.burn-l { color: var(--mute); }
+.burn-r { color: var(--vscode-foreground); flex: 0 0 auto; }
 .burn-e { color: var(--mute2); min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .burn-danger .burn-r, .burn-danger .burn-e { color: var(--danger-text); }
 .cols { display: flex; align-items: flex-end; gap: 2px; height: 60px; padding: 6px 14px 0; }
@@ -54,10 +60,11 @@
 .col:hover .col-b { opacity: 1; }
 .col.zero .col-b { background: var(--hair); }
 .colsx { display: flex; justify-content: space-between; padding: 4px 14px 0; font-family: var(--mono); font-size: 8.5px; color: var(--mute2); }
-.hrow { display: flex; align-items: center; gap: 8px; padding: 3px 14px; }
-.hlbl { font-size: 11px; width: 84px; flex: 0 0 auto; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.hbar { flex: 1; min-width: 16px; height: 6px; border-radius: 3px; background: var(--hair); overflow: hidden; }
+.hrow { padding: 4px 14px; }
+.hhead { display: flex; align-items: baseline; gap: 8px; margin-bottom: 3px; }
+.hlbl { font-size: 11px; flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.hbar { display: block; height: 5px; border-radius: 3px; background: var(--hair); overflow: hidden; }
 .hfill { display: block; height: 100%; border-radius: 3px; background: var(--accent); opacity: .75; }
-.hval { font-family: var(--mono); font-size: 9.5px; color: var(--mute2); width: 42px; text-align: right; flex: 0 0 auto; }
-.herr { font-family: var(--mono); font-size: 9px; color: var(--mute2); width: 30px; text-align: right; flex: 0 0 auto; }
+.hval { font-family: var(--mono); font-size: 9.5px; color: var(--mute2); flex: 0 0 auto; }
+.herr { font-family: var(--mono); font-size: 9px; color: var(--mute2); flex: 0 0 auto; }
 .herr.bad { color: var(--danger-text); }
