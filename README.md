@@ -10,7 +10,7 @@ Claude Report shows your Claude Code, Codex, Antigravity and Cursor usage inside
 
 <p align="center"><img src="media/marketplace/report.gif" alt="A report scrolling from totals and overview to a project's examples with time saved, then to prompting advice"></p>
 
-<p align="center"><img src="media/marketplace/metrics.png" alt="Know where your plan stands: five-hour and weekly usage, burn rate and tokens in the sidebar"></p>
+<p align="center"><img src="media/marketplace/metrics.png" alt="Know where your plan stands: five-hour and weekly usage, burn rate, a trend colored by level that marks early refills, and small bars in the status bar"></p>
 
 <p align="center"><img src="media/marketplace/report.png" alt="See what you shipped: each project's work, examples and estimated time saved"></p>
 
@@ -21,7 +21,8 @@ Claude Report shows your Claude Code, Codex, Antigravity and Cursor usage inside
 ## Also included
 
 - **Sessions:** browse your Claude Code history and resume any session in its own folder.
-- **Status bar:** model and context at a glance, plus plan gauges once connected.
+- **Status bar:** model, context, and five-hour and weekly usage as small bars.
+- **Tidy sidebar:** sections fold from their headings, and long lists show the first rows with the rest behind a scrollable "more".
 - **Cloud or local:** write reports with your Claude Code sign-in, or keep them on your machine with LM Studio or Ollama. If the local server is not running, it asks you to open it; it picks a model that fits your GPU.
 - **Export:** save reports as HTML or PDF.
 - **Private:** reads local transcripts, redacts common secrets, no telemetry.

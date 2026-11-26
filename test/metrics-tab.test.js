@@ -115,10 +115,76 @@ test('plan trends use wall-clock ranges and break at provider resets', () => {
 });
 
 test('bind reports the toggled value', () => {
-  let h; const root = { addEventListener: (t, f) => { if (t === 'click') h = f; } };
+  const clicks = [];
+  const root = { addEventListener: (t, f) => { if (t === 'click') clicks.push(f); } };
   let got; M.bind(root, { openOnly: false }, (s) => { got = s; });
-  h({ target: { closest: () => ({ disabled: false }) } });
+  clicks[0]({ target: { closest: () => ({ disabled: false }) } });
   assert.deepStrictEqual(got, { openOnly: true });
+});
+
+test('the item lists cap and fold the rest behind a tiny arrow in a scrollable body', () => {
+  const many = [];
+  for (let i = 0; i < 8; i++) many.push(proj('big' + i, i + 1));
+  const html = M.render({ ...D, projects: many, days: [] }, { openOnly: false });
+  assert.match(html, /class="hmore-t"/);
+  assert.ok(html.includes('hmore-body'));
+  assert.ok((html.match(/class="hrow"/g) || []).length >= 5);
+});
+
+test('the more arrow toggles the section class and the arrow direction', () => {
+  const toggles = [];
+  const clicks = [];
+  const root = { addEventListener: (t, f) => { if (t === 'click') clicks.push(f); } };
+  M.bind(root, { openOnly: false });
+  const arrow = { textContent: '▾' }, label = { textContent: '51 more' };
+  const section = { classList: { toggle: (c) => { toggles.push(c); }, contains: () => false } };
+  const button = {
+    closest: (sel) => (sel === '[data-hmore]' ? button : sel === '.hrows' ? section : null),
+    querySelector: (sel) => (sel === '.hmore-arrow' ? arrow : sel === '.hmore-n' ? label : null),
+    getAttribute: (name) => (name === 'data-hmore' ? '51 more' : null),
+  };
+  clicks[clicks.length - 1]({ target: button });
+  assert.deepStrictEqual(toggles, ['hrows-expanded']);
+  assert.strictEqual(arrow.textContent, '▾');
+  assert.strictEqual(label.textContent, '51 more');
+  section.classList.contains = () => true;
+  clicks[clicks.length - 1]({ target: button });
+  assert.strictEqual(arrow.textContent, '▴');
+  assert.strictEqual(label.textContent, 'Show less');
+});
+
+test('each folded list sits in its own .hrows wrapper with the arrow and the body inside it', () => {
+  const html = M.render({ ...D, projects: Array.from({ length: 8 }, (_, i) => proj('p' + i, i + 1)), days: [] }, {});
+  const folded = (html.match(/<div class="hrows" data-list="m-[a-z]+"><div class="hrows-list">(?:(?!<div class="scope)[\s\S])*?class="hmore-body"(?:(?!<div class="scope)[\s\S])*?data-hmore/g) || []);
+  assert.ok(folded.length >= 1, 'the arrow and its body share one .hrows wrapper');
+  assert.doesNotMatch(html, /class="scope hrows"/);
+  const open = M.render({ ...D, projects: Array.from({ length: 8 }, (_, i) => proj('p' + i, i + 1)), days: [] }, { more: { 'm-projects': true } });
+  assert.match(open, /<div class="hrows hrows-expanded" data-list="m-projects">/, 'a remembered open list is drawn open');
+  assert.match(open, /data-key="m-projects" aria-expanded="true"><span class="hmore-arrow">▴<\/span> <span class="hmore-n">Show less/);
+  assert.match(html, /<div class="hmore-body">(?:(?!hmore-t)[\s\S])*?title="p0"[\s\S]*?<span class="hmore-n">3 more<\/span>/, 'By project keeps every project, folding past five');
+});
+
+test('the trend line is colored by height, and the latest dot is valid SVG', () => {
+  const html = M.renderPlan({ history: hist, now: hist.at(-1).t });
+  assert.match(html, /<linearGradient id="spark-g-s" gradientUnits="userSpaceOnUse" x1="0" y1="38\.0" x2="0" y2="4\.0">/);
+  assert.match(html, /<circle cx="[\d.]+" cy="[\d.]+" r="2\.3"/);
+});
+
+test('an early refill is marked like a reset, and both windows refilling adds the refresh note', () => {
+  const hour = 3600000, now = 1e12, later = (now + 3 * hour) / 1000;
+  const history = [
+    { t: now - 3 * hour, s: 100, sr: later, w: 60, wr: later + 86400 },
+    { t: now - 2 * hour, s: 0, sr: later, w: 10, wr: later + 86400 },
+    { t: now - hour, s: 90, sr: later, w: 14, wr: later + 86400 },
+  ];
+  const html = M.renderPlan({ now, history });
+  assert.strictEqual((html.match(/class="spark-reset spark-refill"/g) || []).length, 2);
+  assert.match(html, /Refilled without a scheduled reset/);
+  assert.match(html, /the weekly was probably refreshed/);
+  const onlySession = history.map((p) => ({ ...p, w: 20 }));
+  assert.doesNotMatch(M.renderPlan({ now, history: onlySession }), /probably refreshed/);
+  const scheduled = [{ t: now - 3 * hour, s: 95, sr: (now - 2.5 * hour) / 1000 }, { t: now - 2 * hour, s: 3, sr: later }];
+  assert.doesNotMatch(M.renderPlan({ now, history: scheduled }), /spark-refill/, 'a drop after the scheduled reset is a normal reset');
 });
 
 test('a source with turns but no tokens shows turns, not zero token views', () => {

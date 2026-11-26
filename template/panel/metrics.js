@@ -36,6 +36,12 @@
     return pct >= 90 ? 'var(--danger)' : pct >= 70 ? 'var(--warn)' : 'var(--accent)';
   }
 
+  // Trend chart color coding: low usage green, middle yellow, high red.
+  function trendColor(pct) {
+    const v = Math.max(0, Math.min(100, pct));
+    return v >= 80 ? 'var(--danger)' : v >= 50 ? 'var(--warn)' : 'var(--led-on)';
+  }
+
   function scope(label, tag) {
     return '<div class="scope"><span class="dot"></span>' + esc(label) +
       (tag ? '<span class="path">' + esc(tag) + '</span>' : '') + '</div>';
@@ -51,12 +57,29 @@
       'stroke-dasharray="' + (p / 100 * C).toFixed(1) + ' ' + C.toFixed(1) + '" transform="rotate(-90 32 32)"/></svg>' +
       '<div class="donut-c"><b>' + Math.round(p) + '%</b><span>' + esc(label) + '</span></div></div>';
   }
-  function sparkline(points, key, from, now, maxGap, c) {
+  // A window that falls by REFILL points or more between two readings while its scheduled reset
+  // has not passed was refilled early (a plan change, a grant, a provider-side reset). The chart
+  // marks it like a reset instead of reading the climb after it as ordinary usage.
+  var REFILL = 8;
+  function refillTimes(points, key, from) {
+    var resetKey = key + 'r', out = [], prev = null;
+    points.forEach(function (p) {
+      if (prev && p.t >= from && prev[key] - p[key] >= REFILL) {
+        var r = prev[resetKey] * 1000;
+        var scheduled = r > 0 && (p.t >= r || (p[resetKey] && p[resetKey] !== prev[resetKey]));
+        if (!scheduled) out.push(p.t);
+      }
+      prev = p;
+    });
+    return out;
+  }
+  function sparkline(points, key, from, now, maxGap) {
     var W = 252, H = 42, pad = 4, resetKey = key + 'r';
     var x = function (t) { return (pad + (t - from) / (now - from) * (W - 2 * pad)).toFixed(1); };
     var y = function (pct) { return (H - pad - Math.max(0, Math.min(100, pct)) / 100 * (H - 2 * pad)).toFixed(1); };
     var latest = null, segments = [];
     var resets = new Set();
+    var refills = refillTimes(points, key, from);
     points.forEach(function (point) {
       var reset = point[resetKey] * 1000;
       if (reset >= from && reset <= now) resets.add(reset);
@@ -65,28 +88,38 @@
       var continuous = latest && point.t - latest.t <= maxGap && point[key] >= latest[key] &&
         (!previousReset || point.t < previousReset) && (!previousReset || !reset || previousReset === reset);
       if (!continuous) segments.push([]);
-      segments[segments.length - 1].push([x(point.t), y(point[key])]);
+      segments[segments.length - 1].push([x(point.t), y(point[key]), point[key]]);
       latest = point;
     });
     var markers = Array.from(resets).map(function (reset) {
       var pos = x(reset);
       return '<path d="M' + pos + ' 2V40" class="spark-reset"><title>Reset ' + esc(new Date(reset).toLocaleString()) + '</title></path>';
+    }).join('') + refills.map(function (t) {
+      return '<path d="M' + x(t) + ' 2V40" class="spark-reset spark-refill"><title>Refilled without a scheduled reset ' +
+        esc(new Date(t).toLocaleString()) + '</title></path>';
     }).join('');
     if (!latest && !markers) return '';
     var line = '', areas = '', dots = '';
     segments.forEach(function (segment) {
-      var trace = segment.map(function (xy) { return xy.join(' '); }).join('L');
+      var trace = segment.map(function (p) { return p[0] + ' ' + p[1]; }).join('L');
       line += 'M' + trace;
+      var c = trendColor(Math.max.apply(null, segment.map(function (p) { return p[2]; })));
       if (segment.length > 1) {
         areas += '<path class="spark-area" d="M' + segment[0][0] + ' 38L' + trace + 'L' + segment[segment.length - 1][0] + ' 38Z" fill="' + c + '"/>';
       } else {
         dots += '<circle cx="' + segment[0][0] + '" cy="' + segment[0][1] + '" r="1.6" fill="' + c + '"/>';
       }
     });
-    var end = latest ? '<circle cx="' + x(latest.t) + '" cy="' + y(latest[key]) + '" r="2.3" fill="' + c + '"/>' : '';
+    // The solid line is colored by height, not by time: a vertical gradient in chart units, so
+    // the stretch under 50% is green, 50-80% yellow and 80% and above red, wherever it sits.
+    var grad = '<defs><linearGradient id="spark-g-' + key + '" gradientUnits="userSpaceOnUse" x1="0" y1="' + y(0) + '" x2="0" y2="' + y(100) + '">' +
+      '<stop offset="0" stop-color="var(--led-on)"/><stop offset=".45" stop-color="var(--led-on)"/>' +
+      '<stop offset=".55" stop-color="var(--warn)"/><stop offset=".75" stop-color="var(--warn)"/>' +
+      '<stop offset=".85" stop-color="var(--danger)"/><stop offset="1" stop-color="var(--danger)"/></linearGradient></defs>';
+    var end = latest ? '<circle cx="' + x(latest.t) + '" cy="' + y(latest[key]) + '" r="2.3" fill="' + trendColor(latest[key]) + '"/>' : '';
     return '<svg class="spark" viewBox="0 0 ' + W + ' ' + H + '" preserveAspectRatio="none" aria-hidden="true">' +
-      '<path class="spark-grid" d="M4 21H248M4 38H248"/>' + areas + markers +
-      '<path d="' + line + '" fill="none" stroke="' + c + '" stroke-width="1.6" stroke-linejoin="round" stroke-linecap="round"/>' +
+      '<path class="spark-grid" d="M4 21H248M4 38H248"/>' + grad + areas + markers +
+      '<path d="' + line + '" fill="none" stroke="url(#spark-g-' + key + ')" stroke-width="1.6" stroke-linejoin="round" stroke-linecap="round"/>' +
       dots + end + '</svg>';
   }
   function columns(vals, titleOf) {
@@ -97,18 +130,35 @@
       return '<div class="col' + (v ? '' : ' zero') + '" title="' + esc(titleOf(i)) + '"><span class="col-b" style="height:' + h + '%"></span></div>';
     }).join('') + '</div>';
   }
-  // One row helper for Tools, By model and By project: name and figures on one line, the bar below
-  // at full width, so long names and narrow sidebars keep room for both.
-  function rows(items) {
+  // The big item lists fold at a cap: Tools shows at most 10 rows, By model and By
+  // project at most 5; the rest fold behind a tiny arrow that expands them in a
+  // scrollable area.
+  // One folded list: the first rows, the rest hidden in .hmore-body, and the arrow below the list.
+  // Open, the whole .hrows-list scrolls as one area (CSS), and the arrow stays outside the scroll.
+  function foldList(head, rest, count, key, open) {
+    var more = count + ' more';
+    return '<div class="hrows' + (open ? ' hrows-expanded' : '') + '"' + (key ? ' data-list="' + esc(key) + '"' : '') + '><div class="hrows-list">' + head +
+      '<div class="hmore-body">' + rest + '</div></div>' +
+      '<div class="hmore"><button type="button" class="hmore-t" data-hmore="' + esc(more) + '"' + (key ? ' data-key="' + esc(key) + '"' : '') +
+      ' aria-expanded="' + open + '"><span class="hmore-arrow">' + (open ? '▴' : '▾') + '</span> <span class="hmore-n">' +
+      (open ? 'Show less' : esc(more)) + '</span></button></div></div>';
+  }
+  // `key` names the list in `more` (the caller's remembered open lists), so a redraw keeps it open.
+  function rows(items, limit, key, more) {
+    var max = limit == null ? 5 : limit;
     var top = Math.max.apply(null, items.map(function (i) { return i.value; }).concat([1]));
-    return items.map(function (i) {
+    var row = function (i) {
       return '<div class="hrow"><div class="hhead"><span class="hlbl" title="' + esc(i.name) + '">' +
         (i.color ? '<i style="display:inline-block;width:6px;height:6px;border-radius:50%;margin-right:5px;background:' + i.color + '"></i>' : '') + esc(i.name) + '</span>' +
         '<span class="hval">' + esc(i.display) + '</span>' +
         (i.err ? '<span class="herr' + (i.bad ? ' bad' : '') + '">' + esc(i.err) + '</span>' : '') + '</div>' +
         '<span class="hbar"><span class="hfill" style="width:' + Math.max(2, i.value / top * 100) + '%' +
         (i.color ? ';background:' + i.color + ';opacity:1' : '') + '"></span></span></div>';
-    }).join('');
+    };
+    var out = items.slice(0, max).map(function (i) { return row(i); }).join('');
+    if (items.length <= max) return '<div class="hrows">' + out + '</div>';
+    // Expanded, the whole list scrolls as one area; the arrow stays below it, outside the scroll.
+    return foldList(out, items.slice(max).map(function (i) { return row(i); }).join(''), items.length - max, key, !!(more && key && more[key]));
   }
 
   var HOUR = 3600000;
@@ -187,15 +237,25 @@
       var points = hist.filter(function (p) { return Number.isFinite(p[key]); });
       var latest = points[points.length - 1];
       var pct = latest && latest.t >= from ? latest[key] : null;
-      var c = pct == null ? 'var(--mute)' : usageColor(pct);
-      var svg = sparkline(points, key, from, now, spec.gap * HOUR, c);
+      var c = pct == null ? 'var(--mute)' : trendColor(pct);
+      var svg = sparkline(points, key, from, now, spec.gap * HOUR);
       var reading = pct == null ? '' : '<span style="color:' + c + '" title="' +
         esc((latest[key + 'Source'] === 'control' ? 'Claude Control reading ' : 'Last reading ') + new Date(latest.t).toLocaleString()) + '">' + Math.round(pct) + '%</span>';
       return '<div class="sparkrow"><div class="sparklbl"><span>' + esc(spec.trend) + '</span>' + reading + '</div>' +
         (svg ? svg + '<div class="spark-axis"><span>' + esc(spec.start) + '</span><span>Now</span></div>' : '<div class="spark-empty">No readings in this period</div>') + '</div>';
     };
     var control = hist.some(function (p) { return p.t >= now - 7 * 24 * HOUR && (p.sSource === 'control' || p.wSource === 'control'); });
-    return planUsage(D.live || {}, hist, now) + scope('Trend', control ? 'Includes Claude Control' : 'Claude plan') + PLAN.map(block).join('');
+    return planUsage(D.live || {}, hist, now) + scope('Trend', control ? 'Includes Claude Control' : 'Claude plan') + PLAN.map(block).join('') +
+      refreshNote(hist, now);
+  }
+
+  // Both windows refilled early within the last day: the weekly was most likely refreshed.
+  function refreshNote(hist, now) {
+    var day = now - 24 * HOUR;
+    var both = ['s', 'w'].every(function (key) {
+      return refillTimes(hist.filter(function (p) { return Number.isFinite(p[key]); }), key, day).length > 0;
+    });
+    return both ? '<div class="usenote">Both the session and the weekly dropped sharply without a reset: the weekly was probably refreshed.</div>' : '';
   }
 
   function render(D, state) {
@@ -268,10 +328,10 @@
       .sort(function (a, b) { return b.calls - a.calls; });
     if (tl.length) {
       var calls = tl.reduce(function (n, t) { return n + t.calls; }, 0);
-      h += scope('Tools', kfmt(calls) + ' calls') + rows(tl.slice(0, 8).map(function (t) {
+      h += scope('Tools', kfmt(calls) + ' calls') + rows(tl.map(function (t) {
         var pct = t.calls ? Math.round(t.fails / t.calls * 100) : 0;
         return { name: t.name, value: t.calls, display: kfmt(t.calls), err: t.fails ? pct + '% failed' : '', bad: pct >= 10 };
-      }));
+      }), 10, 'm-tools', state.more);
     }
 
     // Hours
@@ -288,15 +348,15 @@
     var models = {};
     ps.forEach(function (p) { Object.keys(p.models).forEach(function (m) { models[m] = (models[m] || 0) + num(p.models[m]); }); });
     var ml = Object.keys(models).map(function (m) { return { name: m.replace(/^claude-/, ''), value: models[m], display: kfmt(models[m]) }; })
-      .sort(function (a, b) { return b.value - a.value; }).slice(0, 6);
-    if (ml.length && !turnsOnly) h += scope('By model') + rows(ml);
+      .sort(function (a, b) { return b.value - a.value; });
+    if (ml.length && !turnsOnly) h += scope('By model') + rows(ml, 5, 'm-models', state.more);
 
     // By project
     var pl = ps.map(function (p) {
       var v = turnsOnly ? num(p.t.turns) : num(p.t.input) + num(p.t.output) + num(p.t.cacheRead) + num(p.t.cacheCreate);
       return { name: p.name, value: v, display: kfmt(v), color: color[p.name] };
-    }).sort(function (a, b) { return b.value - a.value; }).slice(0, 8);
-    if (pl.length) h += scope('By project') + rows(pl);
+    }).sort(function (a, b) { return b.value - a.value; });
+    if (pl.length) h += scope('By project') + rows(pl, 5, 'm-projects', state.more);
 
     h += '<div class="usenote">Counted locally; Antigravity and recent Cursor logs do not record tokens.</div>';
     return h;
@@ -311,10 +371,25 @@
       return true;
     };
     root.addEventListener('click', toggle);
+    root.addEventListener('click', function (e) {
+      var t = e.target && e.target.closest ? e.target.closest('[data-hmore]') : null;
+      // A keyed list belongs to the sidebar, which remembers it and redraws it open or closed.
+      if (!t || !t.closest || (t.getAttribute && t.getAttribute('data-key'))) return;
+      var sec = t.closest('.hrows');
+      if (sec) {
+        sec.classList.toggle('hrows-expanded');
+        var arrow = t.querySelector('.hmore-arrow');
+        var open = sec.classList.contains('hrows-expanded');
+        if (arrow) arrow.textContent = open ? '▴' : '▾';
+        var label = t.querySelector('.hmore-n');
+        if (label) label.textContent = open ? 'Show less' : t.getAttribute('data-hmore');
+        if (t.setAttribute) t.setAttribute('aria-expanded', String(open));
+      }
+    });
     root.addEventListener('keydown', function (e) {
       if ((e.key === 'Enter' || e.key === ' ') && toggle(e) && e.preventDefault) e.preventDefault();
     });
   }
 
-  window.ClaudeReportMetrics = { render: render, renderPlan: renderPlan, bind: bind };
+  window.ClaudeReportMetrics = { render: render, renderPlan: renderPlan, bind: bind, foldList: foldList };
 })(window);

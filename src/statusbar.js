@@ -1,10 +1,14 @@
 'use strict';
 
 // What the bottom status bar shows, as plain data so it can be tested without VS Code.
-// Each gauge is a ring glyph item (coloured by how full the window is) next to a
-// plain label item: VS Code gives one colour per item, so the two are separate.
-const RING = ['○', '◔', '◑', '◕', '●'];
-const ring = (pct) => RING[Math.min(4, Math.round(Math.max(0, pct) / 25))];
+// Each gauge is a normal horizontal bar item — a track of `█` filled cells with `░`
+// empty ones, proportional to how full the window is — next to a plain label item:
+// VS Code gives one colour per item, so the two are separate.
+const BAR_W = 5;
+const bar = (pct) => {
+  const p = Math.max(0, Math.min(100, pct));
+  return '█'.repeat(Math.round(p / 100 * BAR_W)).padEnd(BAR_W, '░');
+};
 const COLORS = { ok: '#34c759', mid: '#ff9f0a', hot: '#ff453a' };
 const levelColor = (pct) => (pct >= 80 ? COLORS.hot : pct >= 50 ? COLORS.mid : COLORS.ok);
 
@@ -26,7 +30,7 @@ function statusItems(live, commands) {
   const gauge = (label, w) => {
     if (!w) return;
     const pct = Math.round(w.pct);
-    items.push({ text: ring(w.pct), color: levelColor(w.pct), command: open, tooltip: `${label} usage ${pct}% ${resets(w)}`.trim() });
+    items.push({ text: bar(w.pct), color: levelColor(w.pct), command: open, tooltip: `${label} usage ${pct}% ${resets(w)}`.trim() });
     items.push({ text: `${label} ${pct}%`, command: open, tooltip: resets(w) });
   };
   gauge('5h', live.fiveHour);
@@ -37,4 +41,4 @@ function statusItems(live, commands) {
   return items;
 }
 
-module.exports = { statusItems, ring, levelColor, COLORS, MAX_ITEMS: 6 };
+module.exports = { statusItems, bar, levelColor, COLORS, MAX_ITEMS: 6 };

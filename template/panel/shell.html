@@ -170,6 +170,8 @@ html, body { margin: 0; padding: 0; font-family: var(--vscode-font-family); font
 .rb.on { border-color: var(--accent); background: radial-gradient(var(--accent) 0 42%, transparent 48%); }
 .row .state.max { color: var(--vscode-foreground); font-size: 11px; }
 .cp-scope.click { cursor: pointer; }
+.cp-scope.click:hover { color: var(--mute); }
+.fold-t { appearance: none; display: inline-flex; align-items: center; gap: 7px; min-width: 0; padding: 0; border: 0; background: transparent; color: inherit; font: inherit; letter-spacing: inherit; text-transform: inherit; cursor: pointer; }
 .cp-scope .chev { width: 10px; height: 10px; flex: 0 0 auto; transition: transform .15s ease; }
 .cp-scope.closed .chev { transform: rotate(-90deg); }
 /*__METRICS_CSS__*/
@@ -183,6 +185,9 @@ html, body { margin: 0; padding: 0; font-family: var(--vscode-font-family); font
   var saved = api.getState() || {};
   var S = { tab: ['sessions', 'report', 'connect', 'metrics'].indexOf(saved.tab) >= 0 ? saved.tab : 'sessions', openOnly: !!saved.openOnly, metricSource: saved.metricSource || null, sel: saved.sel || {}, local: null, sessOnly: !!saved.sessOnly, test: null, d: null, items: [], stage: '', running: false, spin: false };
   S.progressView = saved.progressView === 'flow' ? 'flow' : 'list';
+  // Sections the user closed and folded lists they opened, kept across redraws and reloads.
+  S.closed = saved.closed && typeof saved.closed === 'object' ? saved.closed : {};
+  S.more = saved.more && typeof saved.more === 'object' ? saved.more : {};
   S.phases = [];
   var app = document.getElementById('app');
   var splash = function (text) { return '<div class="splash"><svg class="logo" viewBox="0 0 64 64" aria-hidden="true"><rect class="b b1" x="10" y="32" width="12" height="22" rx="4"/><rect class="b b2" x="26" y="20" width="12" height="34" rx="4"/><rect class="b b3" x="42" y="8" width="12" height="46" rx="4"/></svg><div class="sp-t">Claude Report</div><div class="sp-s">AI activity and reports</div><div class="sp-bar"><span></span></div><div class="sp-m">' + esc(text) + '</div></div>'; };
@@ -198,7 +203,23 @@ html, body { margin: 0; padding: 0; font-family: var(--vscode-font-family); font
   };
   var TABS = [['sessions', 'Sessions'], ['metrics', 'Metrics'], ['report', 'Report'], ['connect', 'Connect']];
   var post = function (m) { api.postMessage(m); };
-  var persist = function () { api.setState({ tab: S.tab, openOnly: S.openOnly, sessOnly: S.sessOnly, metricSource: S.metricSource, sel: S.sel, progressView: S.progressView }); };
+  var persist = function () { api.setState({ tab: S.tab, openOnly: S.openOnly, sessOnly: S.sessOnly, metricSource: S.metricSource, sel: S.sel, progressView: S.progressView, closed: S.closed, more: S.more }); };
+
+  // A section heading that folds its section: the whole heading is the target, the inner button
+  // gives keyboard focus and the expanded state. Links and buttons in `extra` keep their own actions.
+  var CHEV = '<svg class="chev" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 6l4 4 4-4"/></svg>';
+  var shut = function (key) { return !!S.closed[key]; };
+  function head(key, label, extra, cls) {
+    var open = !shut(key);
+    return '<div class="cp-scope click' + (cls ? ' ' + cls : '') + (open ? '' : ' closed') + '" data-fold="' + esc(key) + '">' +
+      '<button type="button" class="fold-t" aria-expanded="' + open + '">' + CHEV + label + '</button>' + (extra || '') + '</div>';
+  }
+  // A long list shows `cap` rows and folds the rest behind the same arrow as the Metrics lists.
+  function fold(key, items, cap) {
+    cap = cap || 5;
+    if (items.length <= cap) return items.join('');
+    return window.ClaudeReportMetrics.foldList(items.slice(0, cap).join(''), items.slice(cap).join(''), items.length - cap, key, !!S.more[key]);
+  }
 
   function tabs() {
     var d = S.d || {};
@@ -251,7 +272,7 @@ html, body { margin: 0; padding: 0; font-family: var(--vscode-font-family); font
       showUsageTrend: plan,
       live: d.live || metrics.live,
       history: d.planHistory || metrics.history
-    }), { openOnly: S.openOnly });
+    }), { openOnly: S.openOnly, more: S.more });
   }
 
   // The same list the Claude Code panel shows: newest first, a click resumes the session.
@@ -266,10 +287,12 @@ html, body { margin: 0; padding: 0; font-family: var(--vscode-font-family); font
     ['Active', 'Today', 'Yesterday', 'Earlier'].forEach(function (g) {
       var rows = list.filter(function (x) { return x.group === g; });
       if (!rows.length) return;
-      h += '<div class="cp-scope">' + g + '<span class="path">' + rows.length + '</span></div>';
-      rows.forEach(function (x) {
-        h += '<div class="row click" data-sid="' + esc(x.id) + '" data-cwd="' + esc(x.cwd || '') + '" title="' + esc(x.title) + '"><span class="led ' + (x.active ? (x.status === 'busy' ? 'run' : 'on') : '') + '"></span><div class="body"><div class="l">' + esc(x.title) + '</div><div class="d">' + esc(x.project || '') + '</div></div><span class="state">' + esc(x.age) + '</span></div>';
-      });
+      var key = 's-' + g.toLowerCase();
+      h += head(key, g, '<span class="path">' + rows.length + '</span>');
+      if (shut(key)) return;
+      h += fold(key, rows.map(function (x) {
+        return '<div class="row click" data-sid="' + esc(x.id) + '" data-cwd="' + esc(x.cwd || '') + '" title="' + esc(x.title) + '"><span class="led ' + (x.active ? (x.status === 'busy' ? 'run' : 'on') : '') + '"></span><div class="body"><div class="l">' + esc(x.title) + '</div><div class="d">' + esc(x.project || '') + '</div></div><span class="state">' + esc(x.age) + '</span></div>';
+      }), 8);
     });
     return h;
   }
@@ -354,13 +377,16 @@ html, body { margin: 0; padding: 0; font-family: var(--vscode-font-family); font
     var busy = S.running;
     var h = '<div class="cp-scope"><span class="dot"></span>Report<span class="path">' + esc(d.monthLabel || '') + '</span></div>';
 
-    h += '<div class="cp-scope sub">Projects <span style="opacity:.6;letter-spacing:.04em">· prompts</span><span class="path cp-links"><a data-act="all">all</a> · <a data-act="none">none</a></span></div>';
-    if (!picks.length) h += '<div class="cp-note">' + (d.reportProjects ? 'No project has prompts in the selected dates.' : 'Reading projects…') + '</div>';
-    picks.forEach(function (p) {
-      var id = projectId(p);
-      var on = p.eligible && S.sel[id] !== false;
-      h += '<div class="row click' + (p.eligible && !busy ? '' : ' off') + '" data-proj="' + esc(id) + '"' + (p.hint ? ' title="' + esc(p.hint) + '"' : '') + '><span class="cb' + (on ? ' on' : '') + '"></span><div class="body"><div class="l">' + esc(p.name) + '</div></div><span class="state" title="' + p.prompts + ' prompts">' + p.prompts + '</span></div>';
-    });
+    h += head('r-projects', 'Projects <span style="opacity:.6;letter-spacing:.04em">· prompts</span>',
+      '<span class="path cp-links">' + (picks.length ? n + ' of ' + picks.length + ' · ' : '') + '<a data-act="all">all</a> · <a data-act="none">none</a></span>', 'sub');
+    if (!shut('r-projects')) {
+      if (!picks.length) h += '<div class="cp-note">' + (d.reportProjects ? 'No project has prompts in the selected dates.' : 'Reading projects…') + '</div>';
+      h += fold('r-projects', picks.map(function (p) {
+        var id = projectId(p);
+        var on = p.eligible && S.sel[id] !== false;
+        return '<div class="row click' + (p.eligible && !busy ? '' : ' off') + '" data-proj="' + esc(id) + '"' + (p.hint ? ' title="' + esc(p.hint) + '"' : '') + '><span class="cb' + (on ? ' on' : '') + '"></span><div class="body"><div class="l">' + esc(p.name) + '</div></div><span class="state" title="' + p.prompts + ' prompts">' + p.prompts + '</span></div>';
+      }));
+    }
 
     var sw = function (key, label, desc) {
       return '<div class="row click" data-opt="' + key + '"><div class="body"><div class="l">' + label + '</div><div class="d">' + desc +
@@ -368,16 +394,18 @@ html, body { margin: 0; padding: 0; font-family: var(--vscode-font-family); font
         '" aria-checked="' + !!ex[key] + '"><span class="sw' + (ex[key] ? ' on' : '') + '"></span><span class="state">' +
         (ex[key] ? 'ON' : 'OFF') + '</span></button></div>';
     };
-    h += '<div class="cp-scope sub">Model</div>';
     var engName = '';
     var engId = local.engine || P.engine;
     if (engId) engName = ((local.engines || []).filter(function (e) { return e.engine === engId; })[0] || {}).name || ({ lmstudio: 'LM Studio', ollama: 'Ollama' })[engId] || '';
     var modelDesc = lOn ? (lModel ? esc(lModel) : 'Auto: best model that fits') + (engName ? ' · ' + esc(engName) : '') : cloud ? esc(cloud.project) + ' per project · ' + esc(cloud.final) + ' overview' : '';
-    h += '<div class="row"><div class="body"><div class="l">Run on</div><div class="d">' + modelDesc + '</div></div><span class="seg" role="group" aria-label="Run on">' +
+    h += head('r-model', 'Model', '<span class="path">' + (lOn ? 'Local' : 'Cloud') + '</span>', 'sub');
+    if (!shut('r-model')) h += '<div class="row"><div class="body"><div class="l">Run on</div><div class="d">' + modelDesc + '</div></div><span class="seg" role="group" aria-label="Run on">' +
       '<button type="button" data-mode="cloud" class="' + (lOn ? '' : 'on') + '" aria-pressed="' + !lOn + '">Cloud</button>' +
       '<button type="button" data-mode="local" class="' + (lOn ? 'on' : '') + '" aria-pressed="' + lOn + '">Local</button></span></div>';
-    if (lOn) h += '<div class="row"><div class="body"><div class="cp-links"><a data-tab="connect">Choose model…</a></div></div></div>';
-    h += '<div class="cp-scope sub">Output</div>';
+    if (lOn && !shut('r-model')) h += '<div class="row"><div class="body"><div class="cp-links"><a data-tab="connect">Choose model…</a></div></div></div>';
+    h += head('r-output', 'Output', '<span class="path">' + esc([ex.depth || 'quick', ex.format === 'pdf' ? 'PDF' : 'HTML'].join(' · ')) + '</span>', 'sub');
+    var outputOpen = !shut('r-output');
+    var outStart = h.length;
     var optionButtons = function (key, label, choices, selected) {
       return '<div class="row"><div class="body"><div class="l">' + esc(label) + '</div></div><span class="seg" role="group" aria-label="' + esc(label) + '">' +
         choices.map(function (value) {
@@ -396,6 +424,7 @@ html, body { margin: 0; padding: 0; font-family: var(--vscode-font-family); font
       (ex.dateRange ? 'on' : '') + '" aria-pressed="' + !!ex.dateRange + '">Custom…</button></span></div>';
     h += '<div class="row"><div class="body"><div class="l">Format</div><div class="d">PDF needs Edge or Chrome</div></div><span class="seg"><a data-fmt="html" class="' + (ex.format !== 'pdf' ? 'on' : '') + '">HTML</a><a data-fmt="pdf" class="' + (ex.format === 'pdf' ? 'on' : '') + '">PDF</a></span></div>';
     h += sw('save', 'Save a copy', esc(ex.folderLabel || 'Downloads') + ' · <span class="cp-links"><a data-act="pickFolder">change</a></span>');
+    if (!outputOpen) h = h.slice(0, outStart);
 
     h += '<div class="cp-cta"><div class="report-actions"><button type="button" class="btn' + (busy || !n || needModel ? ' off' : '') + '" data-act="create"' + (busy || !n || needModel ? ' disabled' : '') + '>' +
       (busy ? 'Running report…' : n && !needModel ? (ex.depth === 'deep' ? 'Create deep report' : 'Create report') + ' · ' + n + ' project' + (n === 1 ? '' : 's') : needModel ? 'Pick a local model' : 'Pick a project') + '</button></div>' +
@@ -405,15 +434,16 @@ html, body { margin: 0; padding: 0; font-family: var(--vscode-font-family); font
 
     var reps = d.reports || [];
     if (reps.length || d.archivedReportCount > 0) {
-      h += '<div class="cp-scope sub">Saved reports' + (d.archivedReportCount > 0 ? '<button type="button" class="btn sm hidden-reports" data-act="archivedReports">Hidden reports</button>' : '') + '</div>';
-      reps.forEach(function (r) {
+      h += head('r-saved', 'Saved reports', (reps.length ? '<span class="path">' + reps.length + '</span>' : '') +
+        (d.archivedReportCount > 0 ? '<button type="button" class="btn sm hidden-reports" data-act="archivedReports">Hidden reports</button>' : ''), 'sub');
+      h += fold('r-saved', shut('r-saved') ? [] : reps.map(function (r) {
         var ref = ' data-month="' + esc(r.month) + '"' + (r.run ? ' data-run="' + esc(r.run) + '"' : '');
         var date = r.run ? r.run.slice(0, 19).replace(/ (\d{2})-(\d{2})-(\d{2})/, ' $1:$2:$3') : '';
         var label = r.label || r.month;
         var details = [r.depth, r.projects + (r.projects === 1 ? ' project' : ' projects'), r.partial ? 'partial' : '', r.revision || r.parentRun ? 'revision' : '', reportDuration(r.durationMs), date].filter(Boolean).join(' · ');
-        h += '<div class="row saved-report"><button type="button" class="report-open" data-act="open"' + ref + ' title="' + esc(details) + '">' + I.go + '<span class="body"><span class="l">' + esc(label) + '</span><span class="d">' + esc(details) + '</span></span></button>' +
+        return '<div class="row saved-report"><button type="button" class="report-open" data-act="open"' + ref + ' title="' + esc(details) + '">' + I.go + '<span class="body"><span class="l">' + esc(label) + '</span><span class="d">' + esc(details) + '</span></span></button>' +
           '<button type="button" class="iconbtn report-manage" data-act="manage"' + ref + ' title="Manage report" aria-label="' + esc('Manage ' + label + (date ? ', ' + date : '')) + '">⋯</button></div>';
-      });
+      }));
     }
     h += '<div class="cp-note">Report sources can include Claude Code, Codex, Antigravity and Cursor. Local runs on this computer. Cloud sends redacted prompts through Claude Code.</div>';
     return h;
@@ -432,7 +462,8 @@ html, body { margin: 0; padding: 0; font-family: var(--vscode-font-family); font
     var on = L ? L.enabled : !!P.enabled;
     var cloud = (S.d && S.d.cloud) || {};
     var row = function (k, sub, v) { return '<div class="kv"><span class="k">' + k + '</span><span class="v">' + v + '</span><span class="sub">' + sub + '</span></div>'; };
-    var h = '<div class="cp-scope">Report model<span class="path">full report</span></div>';
+    var h = head('c-model', 'Report model', '<span class="path">full report</span>');
+    if (shut('c-model')) return h;
     h += row('Run on', on ? 'a model on this computer' : 'Claude, through your own Claude Code', '<span class="seg"><a data-mode="cloud" class="' + (on ? '' : 'on') + '">Cloud</a><a data-mode="local" class="' + (on ? 'on' : '') + '">Local</a></span>');
     if (!on) {
       h += row('Per project', 'one worker for each project', '<span class="val">' + esc(cloud.project || 'haiku · medium') + '</span>');
@@ -450,15 +481,15 @@ html, body { margin: 0; padding: 0; font-family: var(--vscode-font-family); font
     if (L.gpu) h += row('GPU', (L.gpu.freeMiB / 1024).toFixed(1) + ' GB free right now', '<span class="val">' + esc(L.gpu.name.replace(/^NVIDIA GeForce /, '')) + ' · ' + Math.round(L.gpu.totalMiB / 1024) + ' GB</span>');
     else h += row('GPU', 'Memory estimates require an NVIDIA GPU', '<span class="dim">—</span>');
     if (eng.running) {
-      h += '<div class="cp-scope sub">Models<span class="path">report context</span></div>';
-      if (!L.models.length) h += '<div class="cp-note">No models found.</div>';
-      L.models.forEach(function (m) {
+      h += head('c-models', 'Models', '<span class="path">report context</span>', 'sub');
+      if (!L.models.length && !shut('c-models')) h += '<div class="cp-note">No models found.</div>';
+      h += fold('c-models', shut('c-models') ? [] : L.models.map(function (m) {
         var sel = L.model ? L.model === m.id : m.state === 'loaded';
         var size = m.sizeBytes ? (m.sizeBytes / 1e9).toFixed(1) + ' GB' : '';
         var meta = [m.quantization, size, m.state === 'loaded' ? 'loaded' : ''].filter(Boolean).join(' · ');
         var title = 'Up to ' + (m.maxContextLabel || '?') + ' tokens.';
-        h += '<div class="row click" data-lm="' + esc(m.id) + '" title="' + esc(title) + '"><span class="rb' + (sel ? ' on' : '') + '"></span><div class="body"><div class="l">' + esc(m.id) + '</div><div class="d">' + esc(meta) + '</div></div><span class="state max">' + esc(m.reportContextLabel || m.maxOnGpuLabel || '') + '</span></div>';
-      });
+        return '<div class="row click" data-lm="' + esc(m.id) + '" title="' + esc(title) + '"><span class="rb' + (sel ? ' on' : '') + '"></span><div class="body"><div class="l">' + esc(m.id) + '</div><div class="d">' + esc(meta) + '</div></div><span class="state max">' + esc(m.reportContextLabel || m.maxOnGpuLabel || '') + '</span></div>';
+      }));
     }
     var model = L.models.find(function (m) { return L.model ? m.id === L.model || m.instanceId === L.model : m.state === 'loaded'; });
     if (model) {
@@ -493,10 +524,10 @@ html, body { margin: 0; padding: 0; font-family: var(--vscode-font-family); font
       h += '<div class="out ' + (S.test.ok ? 'ok' : 'bad') + '">' + S.test.lines.map(esc).join('<br>') + '</div>';
     }
 
-    h += '<div class="cp-scope">Bottom bar</div>';
-    h += kv('Model and context', 'session transcripts, no setup', '<span class="val">' + (live && live.model ? esc(live.model) + (live.ctxPct != null ? ' · ' + Math.round(live.ctxPct) + '%' : '') : '—') + '</span>');
-    h += kv('5h and 7d usage', 'status line hook', '<span class="val">' + (live && live.fiveHour ? Math.round(live.fiveHour.pct) + '% · ' + (live.sevenDay ? Math.round(live.sevenDay.pct) + '%' : '—') : '<span class="dim">' + (d.connected ? 'waiting' : 'needs Connect') + '</span>') + '</span>');
-    h += kv('Last reading', live ? (live.source === 'hook' ? 'from the hook' : 'from transcripts') : 'none yet', '<span class="val">' + (live && live.updatedAt ? ago(live.updatedAt) : '—') + '</span>');
+    h += head('c-bar', 'Bottom bar');
+    if (!shut('c-bar')) h += kv('Model and context', 'session transcripts, no setup', '<span class="val">' + (live && live.model ? esc(live.model) + (live.ctxPct != null ? ' · ' + Math.round(live.ctxPct) + '%' : '') : '—') + '</span>');
+    if (!shut('c-bar')) h += kv('5h and 7d usage', 'status line hook', '<span class="val">' + (live && live.fiveHour ? Math.round(live.fiveHour.pct) + '% · ' + (live.sevenDay ? Math.round(live.sevenDay.pct) + '%' : '—') : '<span class="dim">' + (d.connected ? 'waiting' : 'needs Connect') + '</span>') + '</span>');
+    if (!shut('c-bar')) h += kv('Last reading', live ? (live.source === 'hook' ? 'from the hook' : 'from transcripts') : 'none yet', '<span class="val">' + (live && live.updatedAt ? ago(live.updatedAt) : '—') + '</span>');
     h += localBlock();
     h += '<div class="cp-note">Plan usage appears after your first Claude Code response; run Test if it stays blank.</div>';
     return h;
@@ -517,7 +548,16 @@ html, body { margin: 0; padding: 0; font-family: var(--vscode-font-family); font
     if (markup === lastMarkup) return;
     lastMarkup = markup;
     var focused = document.activeElement && document.activeElement.id;
+    var scrolls = {};
+    if (app.querySelectorAll) Array.prototype.forEach.call(app.querySelectorAll('[data-list]'), function (el) {
+      var list = el.querySelector('.hrows-list');
+      if (list && list.scrollTop) scrolls[el.getAttribute('data-list')] = list.scrollTop;
+    });
     app.innerHTML = markup;
+    Object.keys(scrolls).forEach(function (key) {
+      var list = app.querySelector('[data-list="' + key + '"] .hrows-list');
+      if (list) list.scrollTop = scrolls[key];
+    });
     if (focused && /^(?:progress-(toggle|list|flow|cancel)|report-option-\w+(?:-\w+)?)$/.test(focused)) {
       var replacement = document.getElementById(focused);
       replacement?.focus?.();
@@ -529,9 +569,11 @@ html, body { margin: 0; padding: 0; font-family: var(--vscode-font-family); font
 
   var pending = function () { S.local = Object.assign({}, (S.d && S.d.localPrefs) || {}, S.local, { checking: true, error: null }); render(); };
   app.addEventListener('click', function (e) {
-    var t = e.target.closest('[data-tab],[data-act],[data-proj],[data-opt],[data-fmt],[data-sid],[data-eng],[data-lm],[data-mode],[data-source],[data-thinking]');
+    var t = e.target.closest('[data-tab],[data-act],[data-proj],[data-opt],[data-fmt],[data-sid],[data-eng],[data-lm],[data-mode],[data-source],[data-thinking],[data-fold],[data-key]');
     if (!t) return;
     if (t.dataset.tab) { S.tab = t.dataset.tab; if (S.tab === 'connect' && (((S.d && S.d.localPrefs) || {}).enabled || (S.local && S.local.enabled))) { pending(); post({ cmd: 'localScan' }); } else { persist(); render(); } persist(); return; }
+    if (t.dataset.fold) { S.closed[t.dataset.fold] = !S.closed[t.dataset.fold]; persist(); render(); return; }
+    if (t.dataset.key) { S.more[t.dataset.key] = !S.more[t.dataset.key]; persist(); render(); return; }
     if (t.dataset.source) { S.metricSource = t.dataset.source; persist(); render(); return; }
     if (t.dataset.mode) {
       S.local = { enabled: t.dataset.mode === 'local', checking: true };

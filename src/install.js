@@ -81,14 +81,14 @@ const writeSettings = (p, s) => {
 };
 
 // The extension folder is versioned and disappears on update or uninstall, so
-// settings.json must never point into it. The hook and the one module it needs
+// settings.json must never point into it. The hook and the modules it needs
 // are copied to a stable place instead, one folder per version. A folder already
 // holding identical files is left alone, and changed files are written beside the
 // target and renamed in, so a status line mid-run never reads half a file.
 function installRuntime(extensionPath, destDir = DEFAULT_DIR, version = require(path.join(extensionPath, 'package.json')).version) {
   if (!/^\d+\.\d+\.\d+$/.test(String(version))) throw new Error(`bad runtime version: ${version}`);
   const root = path.join(destDir, 'runtime', String(version));
-  for (const [dir, name] of [['bin', 'hook.js'], ['src', 'live.js']]) {
+  for (const [dir, name] of [['bin', 'hook.js'], ['src', 'live.js'], ['src', 'statusbar.js']]) {
     const to = path.join(root, dir, name);
     const body = fs.readFileSync(path.join(extensionPath, dir, name));
     let same = false;

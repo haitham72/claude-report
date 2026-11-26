@@ -2,6 +2,14 @@
 
 All notable changes are listed here, newest first.
 
+## 0.12.6
+
+- The bottom status — the VS Code status bar gauges and the Claude Code terminal status line — shows each reading as a small horizontal bar of filled cells (`██░░░`) instead of a ring glyph.
+- The Metrics Trend line is colored by height: green under 50%, yellow from 50%, red from 80%, so a window that refills and climbs again reads green before it turns red. The latest-reading dot draws again.
+- A sharp drop of 8 points or more before the scheduled reset is marked on the Trend as an early refill, like a reset. When both the session and the weekly refill within a day, a note says the weekly was probably refreshed.
+- Long lists fold: Tools shows ten rows; By model, By project, the Report projects, Saved reports and local models show five; each Sessions group shows eight. A small arrow below the list opens the rest, and the whole list then scrolls as one area.
+- Sidebar sections fold from their headings — Projects, Model, Output and Saved reports on Report, the Sessions groups, and Bottom bar and Report model on Connect. Folded sections and opened lists are remembered across refreshes and reloads.
+
 ## 0.12.5
 
 - Metrics rows stack like Claude Code's own usage panel, so a narrow sidebar no longer cuts figures off. Plan gauges put the label and percentage on one line, the bar at full width below, and the reset under it ("Resets in 1h 30m · 2:10 AM", with the weekday when it is after today). Burn rates put the estimate on its own line. Tools, By model and By project put the name and figures above a full-width bar, and a tool's failure rate now reads "7% failed". Trend labels shorten instead of running into their percentage.

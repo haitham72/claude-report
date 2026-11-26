@@ -7,9 +7,7 @@ const fs = require('fs');
 const path = require('path');
 const childProcess = require('child_process');
 const { DEFAULT_DIR, writeLive } = require('../src/live');
-
-const RING = ['○', '◔', '◑', '◕', '●'];
-const ring = (p) => RING[Math.min(4, Math.round(Math.max(0, p) / 25))];
+const { bar } = require('../src/statusbar');
 
 // The line Claude Code shows at the bottom of its terminal UI when no other status line is chained.
 // Colour is only added for the real command; tests read the plain text.
@@ -22,12 +20,12 @@ function ownLine(s, color) {
   const parts = [];
   if (s.model && s.model.display_name) parts.push(color ? `\u001b[38;5;147m${s.model.display_name}\u001b[0m` : s.model.display_name);
   const ctx = s.context_window && s.context_window.used_percentage;
-  if (typeof ctx === 'number') parts.push(paint(color ? `${ring(ctx)} ctx ${Math.round(ctx)}%` : `ctx ${Math.round(ctx)}%`, ctx));
+  if (typeof ctx === 'number') parts.push(paint(color ? `${bar(ctx)} ctx ${Math.round(ctx)}%` : `ctx ${Math.round(ctx)}%`, ctx));
   const rl = s.rate_limits || {};
   const f = rl.five_hour && rl.five_hour.used_percentage;
   const d = rl.seven_day && rl.seven_day.used_percentage;
-  if (typeof f === 'number') parts.push(paint(color ? `${ring(f)} 5h ${Math.round(f)}%` : `5h ${Math.round(f)}%`, f));
-  if (typeof d === 'number') parts.push(paint(color ? `${ring(d)} 7d ${Math.round(d)}%` : `7d ${Math.round(d)}%`, d));
+  if (typeof f === 'number') parts.push(paint(color ? `${bar(f)} 5h ${Math.round(f)}%` : `5h ${Math.round(f)}%`, f));
+  if (typeof d === 'number') parts.push(paint(color ? `${bar(d)} 7d ${Math.round(d)}%` : `7d ${Math.round(d)}%`, d));
   const dir = s.cwd ? String(s.cwd).split(/[\\/]/).filter(Boolean).pop() : '';
   const head = dir && color ? `\u001b[2m${dir}\u001b[0m  ` : '';
   return head + parts.join(color ? '  ' : ' · ');

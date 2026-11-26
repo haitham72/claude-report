@@ -38,9 +38,12 @@
   .track { margin-top: 12px; height: 12px; border-radius: 6px; background: var(--fill); }
   .track i { display: block; height: 100%; border-radius: 6px; background: var(--accent); }
   .gnote { margin-top: 10px; font-size: 19px; color: var(--sec); }
-  .stats { display: grid; grid-template-columns: repeat(3, 1fr); margin-top: 34px; padding-top: 28px; border-top: 1px solid var(--line); }
-  .stats b { display: block; font-size: 38px; letter-spacing: -.02em; }
-  .stats span { font-size: 19px; color: var(--sec); }
+  .trend { margin-top: 30px; padding-top: 24px; border-top: 1px solid var(--line); }
+  .tlbl { display: flex; justify-content: space-between; font-size: 19px; color: var(--sec); }
+  .tlbl b { color: var(--ok); font-weight: 600; }
+  .trend svg { display: block; width: 100%; height: 116px; margin-top: 10px; }
+  .sbar { display: flex; justify-content: space-between; margin-top: 26px; padding: 14px 20px; border-radius: 10px; background: #0b0b0d; font: 19px var(--mono); color: var(--sec); white-space: nowrap; }
+  .sbar i { font-style: normal; color: var(--ok); letter-spacing: -.04em; margin-right: 8px; }
 
   /* Report */
   .shipped { padding: 30px 36px; }
@@ -89,24 +92,36 @@
 <section class="board feature" id="metrics">
   <div class="words">
     <h2>Know where your plan stands.</h2>
-    <p>Five-hour and weekly usage, burn rate and tokens, live in the sidebar.</p>
+    <p>Five-hour and weekly usage, burn rate and trend in the sidebar, and small bars in the status bar.</p>
   </div>
   <div class="view card gauges">
     <div class="gauge">
-      <div class="gtop"><span>5-hour session</span><b>16%</b></div>
-      <div class="track"><i style="width:16%"></i></div>
-      <p class="gnote">+2.1% an hour · resets before full in 2h 0m</p>
+      <div class="gtop"><span>5-hour session</span><b>42%</b></div>
+      <div class="track"><i style="width:42%"></i></div>
+      <p class="gnote">+6.0% an hour · resets before full in 2h 0m</p>
     </div>
     <div class="gauge">
-      <div class="gtop"><span>Weekly</span><b>28%</b></div>
-      <div class="track"><i style="width:28%"></i></div>
+      <div class="gtop"><span>Weekly</span><b>18%</b></div>
+      <div class="track"><i style="width:18%"></i></div>
       <p class="gnote">Resets in 3d 11h</p>
     </div>
-    <div class="stats">
-      <div><b>340M</b><span>tokens, 30 days</span></div>
-      <div><b>3.8k</b><span>turns</span></div>
-      <div><b>95%</b><span>from cache</span></div>
+    <div class="trend">
+      <div class="tlbl"><span>5-hour limit · last 24 hours</span><b>42%</b></div>
+      <!-- The line is colored by height, as in the sidebar: green under 50%, yellow to 80%, red above. -->
+      <svg viewBox="0 0 600 116" preserveAspectRatio="none" aria-hidden="true">
+        <defs><linearGradient id="tg" gradientUnits="userSpaceOnUse" x1="0" y1="108" x2="0" y2="8">
+          <stop offset="0" stop-color="#5fd07a"/><stop offset=".45" stop-color="#5fd07a"/><stop offset=".55" stop-color="#f0b24a"/>
+          <stop offset=".75" stop-color="#f0b24a"/><stop offset=".85" stop-color="#ff7b72"/><stop offset="1" stop-color="#ff7b72"/></linearGradient></defs>
+        <path d="M0 58H600M0 108H600" stroke="#2c2c31" stroke-width="1.5" fill="none"/>
+        <path d="M0 108L0 98L90 80L180 56L270 34L330 12L330 108Z" fill="#ff7b72" opacity=".13"/>
+        <path d="M352 108L352 106L432 94L512 78L586 66L586 108Z" fill="#5fd07a" opacity=".13"/>
+        <path d="M341 4V108" stroke="#f0b24a" stroke-width="2" stroke-dasharray="4 6" opacity=".9"/>
+        <text x="350" y="18" fill="#f0b24a" font-size="16" font-family="Segoe UI, sans-serif">refilled early</text>
+        <path d="M0 98L90 80L180 56L270 34L330 12M352 106L432 94L512 78L586 66" stroke="url(#tg)" stroke-width="4" stroke-linejoin="round" stroke-linecap="round" fill="none"/>
+        <circle cx="586" cy="66" r="6" fill="#5fd07a"/>
+      </svg>
     </div>
+    <div class="sbar"><span>Sonnet 5.5 · ctx 31%</span><span><i>██░░░</i>5h 42%</span><span><i>█░░░░</i>7d 18%</span></div>
   </div>
 </section>
 

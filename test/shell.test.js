@@ -261,6 +261,55 @@ test('hidden reports remain accessible when the visible list is empty', () => {
   assert.deepStrictEqual(s.sent.at(-1), { cmd: 'archivedReports' });
 });
 
+test('Report sections fold from their headings, long lists fold behind the arrow, and both survive a reload', () => {
+  const s = boot();
+  const reports = Array.from({ length: 7 }, (_, i) => ({ month: '2026-11', run: `2026-11-2${i} 08-00-00.000`, label: 'Report ' + i, projects: 1 }));
+  const reportProjects = Array.from({ length: 9 }, (_, i) => ({ name: 'proj' + i, prompts: 9 - i, eligible: true }));
+  s.msg({ type: 'state', d: { ...state, reports, reportProjects } });
+  s.click({ tab: 'report' });
+  ['r-projects', 'r-model', 'r-output', 'r-saved'].forEach((k) => assert.match(s.app.innerHTML, new RegExp(`data-fold="${k}"><button type="button" class="fold-t" aria-expanded="true">`), k));
+  assert.match(s.app.innerHTML, /9 of 9 · <a data-act="all">/);
+  assert.match(s.app.innerHTML, /data-list="r-projects"[\s\S]*?4 more/);
+  assert.match(s.app.innerHTML, /data-list="r-saved"[\s\S]*?2 more/);
+
+  s.click({ key: 'r-saved' });
+  assert.match(s.app.innerHTML, /class="hrows hrows-expanded" data-list="r-saved"/);
+  s.click({ fold: 'r-output' });
+  assert.match(s.app.innerHTML, /class="cp-scope click sub closed" data-fold="r-output"/);
+  assert.doesNotMatch(s.app.innerHTML, /Report depth|Save a copy/);
+  assert.match(s.app.innerHTML, /Create report/, 'the button stays when Output is folded');
+
+  const again = boot(s.saved);
+  again.msg({ type: 'state', d: { ...state, reports, reportProjects } });
+  assert.match(again.app.innerHTML, /class="hrows hrows-expanded" data-list="r-saved"/);
+  assert.match(again.app.innerHTML, /data-fold="r-output"><button type="button" class="fold-t" aria-expanded="false">/);
+  again.click({ fold: 'r-saved' });
+  assert.doesNotMatch(again.app.innerHTML, /Report 0/);
+  assert.match(again.app.innerHTML, /Hidden reports|Saved reports/);
+});
+
+test('Sessions groups fold, and a long group shows eight rows before the arrow', () => {
+  const s = boot();
+  const many = Array.from({ length: 12 }, (_, i) => ({ id: 'id' + i, title: 'Earlier ' + i, cwd: 'G:/x', project: 'x', active: false, status: '', age: i + 'd', group: 'Earlier' }));
+  s.msg({ type: 'state', d: { ...state, sessions: many } });
+  assert.match(s.app.innerHTML, /data-list="s-earlier"[\s\S]*?4 more/);
+  s.click({ fold: 's-earlier' });
+  assert.doesNotMatch(s.app.innerHTML, /Earlier 0/);
+  assert.match(s.app.innerHTML, /closed" data-fold="s-earlier"/);
+});
+
+test('Metrics keeps an opened list open across the next state update', () => {
+  const s = boot();
+  const tools = {}; for (let i = 0; i < 14; i++) tools['T' + i] = { calls: 20 - i, fails: 0 };
+  const m = { ...metrics, projects: metrics.projects.map((p) => ({ ...p, tools })) };
+  s.msg({ type: 'state', d: { ...state, metrics: m } });
+  s.click({ tab: 'metrics' });
+  assert.match(s.app.innerHTML, /data-key="m-tools" aria-expanded="false"/);
+  s.click({ key: 'm-tools' });
+  s.msg({ type: 'state', d: { ...state, metrics: m, version: 'v0.1.3' } });
+  assert.match(s.app.innerHTML, /class="hrows hrows-expanded" data-list="m-tools"/);
+});
+
 const sessions = [
   { id: '11111111-1111-4111-8111-111111111111', title: 'Fix the login form', cwd: 'G:/x/a', project: 'a', active: true, status: 'busy', age: 'now', group: 'Active' },
   { id: '22222222-2222-4222-8222-222222222222', title: 'Plan the release', cwd: 'G:/x/b', project: 'b', active: false, status: '', age: '4h', group: 'Today' },
