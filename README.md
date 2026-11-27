@@ -23,7 +23,7 @@ Claude Report shows your Claude Code, Codex, Antigravity and Cursor usage inside
 - **Sessions:** browse your Claude Code history and resume any session in its own folder.
 - **Status bar:** model, context, and five-hour and weekly usage as small bars.
 - **Tidy sidebar:** sections fold from their headings, and long lists show the first rows with the rest behind a scrollable "more".
-- **Cloud or local:** write reports with your Claude Code sign-in, or keep them on your machine with LM Studio or Ollama. If the local server is not running, it asks you to open it; it picks a model that fits your GPU.
+- **Cloud or local:** choose a signed-in CLI and its models to write your report, or use LM Studio or Ollama on your machine. Cloud previews estimate the share of your subscription when local quota history supports it and show the expected workload otherwise.
 - **Export:** save reports as HTML or PDF.
 - **Private:** reads local transcripts, redacts common secrets, no telemetry.
 
@@ -43,7 +43,7 @@ Antigravity and Cursor need SQLite support: the editor's built-in `node:sqlite`,
 1. Install **Claude Report** from the Extensions view.
 2. Open **Claude Report** in the activity bar to see Sessions and Metrics.
 3. Plan gauges use your Claude Code login automatically. Optional: open **Connect** to add the status-line hook as another source (needs Node.js).
-4. In **Report**, pick a month and your projects, then press **Create report**.
+4. In **Report**, choose a date range, select projects, and expand your cloud hook to choose models. Review the usage estimate before pressing **Create report**.
 
 [Full guide](docs/guide.md) · [Privacy](docs/privacy.md) · [Troubleshooting](docs/troubleshooting.md) · [Changelog](CHANGELOG.md)
 

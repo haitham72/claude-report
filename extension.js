@@ -13,7 +13,6 @@ const { detectHost, defaultSource } = require('./src/host');
 const { readPlanHistory } = require('./src/plan-history');
 const { planInstall, applyInstall, applyUninstall, installRuntime, migrateLegacy, isConnected, isWired, hookPathOf, pruneRuntimes } = require('./src/install');
 const { writeFileAtomic } = require('./src/atomic');
-const { runClaude, MODELS, EFFORTS } = require('./src/claude');
 const { generateReports, expandedProjectWords } = require('./src/generate');
 const { buildData, renderHtml, renderDocument, withExampleHours } = require('./src/render');
 const { wrapForWebview } = require('./src/webview');
@@ -42,6 +41,8 @@ const { exportReport, buildMessage, defaultBody } = require('./src/export');
 const { mailtoUrl } = require('./src/mail');
 const { lastDaysRange, dayList, dayKey, projectNameOf, scrubDeep } = require('./src/scan');
 const { localDay, readDateRange, dateRangeLabel, reportBounds } = require('./src/report-window');
+const { PROVIDER_IDS, PROVIDERS, defaultCloudModels, providerEnvironment, runCloudProvider } = require('./src/cloud-providers');
+const { activeQuotaWindows, freshQuotaReading, estimateQuickWorkload, estimateDeepWorkload, estimateSubscriptionImpact } = require('./src/quota-estimate');
 const pkg = require('./package.json');
 
 const HOME_DIR = process.env.CLAUDE_REPORT_HOME || path.join(os.homedir(), '.claude-report');
@@ -91,6 +92,7 @@ function runWorker(file, workerData, signal, timeoutMs = 0) {
 
 const scanJobs = new Map();
 const SCAN_TIMEOUT_MS = 120000;
+const reportScanKey = (range) => range ? `range:${range.from}/${range.to}` : `month:${monthKey()}`;
 
 // key 'month:YYYY-MM' for a calendar month, 'days' for the rolling Metrics window.
 async function getScan(key, maxAgeMs = SCAN_MAX_AGE_MS, input = key === 'days' ? { days: WINDOW_DAYS } : { month: key.slice(6) }) {
@@ -269,6 +271,142 @@ const localConfig = () => {
 };
 
 const setLocal = async (key, value) => writePref(HOME_DIR, `local.${key}`, value);
+
+// --- cloud hooks (signed-in CLIs + subscription quota calibration) ----------
+
+function claudeSettingsDefaults() {
+  const cfg = vscode.workspace.getConfiguration('claudeReport');
+  return {
+    reportModel: cfg.get('reportModel') || 'haiku',
+    reportEffort: cfg.get('reportEffort') || 'medium',
+    finalizerModel: cfg.get('finalizerModel') || 'sonnet',
+    finalizerEffort: cfg.get('finalizerEffort') || 'high'
+  };
+}
+
+function activeCloudProvider(cloudState) {
+  const p = readPrefs(HOME_DIR);
+  if (PROVIDER_IDS.includes(p['cloud.provider'])) return p['cloud.provider'];
+  const list = connectedCloudProviders(cloudState);
+  return list.find((x) => x.id === 'claude')?.id || list[0]?.id || 'claude';
+}
+
+function activeCloudModels(providerId, cloudState) {
+  const p = readPrefs(HOME_DIR);
+  const discovered = cloudState?.modelsByProvider?.[providerId] || [];
+  const defaults = defaultCloudModels(providerId, discovered, claudeSettingsDefaults());
+  const modelsMap = (p['cloud.models'] && typeof p['cloud.models'] === 'object' && !Array.isArray(p['cloud.models'])) ? p['cloud.models'] : {};
+  const saved = (modelsMap[providerId] && typeof modelsMap[providerId] === 'object') ? modelsMap[providerId] : {};
+  const mergeRole = (role) => {
+    const d = defaults[role] || {};
+    const s = (saved[role] && typeof saved[role] === 'object') ? saved[role] : {};
+    const model = discovered.some((entry) => entry.id === s.model) ? s.model : (d.model || '');
+    const entry = discovered.find((value) => value.id === model);
+    const efforts = cloudEfforts(providerId, model, cloudState);
+    const effort = [s.effort, entry?.defaultEffort, d.effort, efforts[0]].find((value) => efforts.includes(value)) || '';
+    return { model, effort };
+  };
+  return { project: mergeRole('project'), overview: mergeRole('overview') };
+}
+
+function cloudEfforts(provider, model, cloudState) {
+  const entry = cloudState?.modelsByProvider?.[provider]?.find((item) => item.id === model);
+  return entry?.efforts || PROVIDERS[provider]?.efforts || [];
+}
+
+function cloudConfig(cloudState) {
+  const provider = activeCloudProvider(cloudState);
+  return { provider, models: activeCloudModels(provider, cloudState) };
+}
+
+const setCloud = async (key, value) => writePref(HOME_DIR, `cloud.${key}`, value);
+
+function updateCloudModelPref(providerId, role, patch, cloudState) {
+  const prefs = readPrefs(HOME_DIR);
+  const allModels = (prefs['cloud.models'] && typeof prefs['cloud.models'] === 'object' && !Array.isArray(prefs['cloud.models']))
+    ? { ...prefs['cloud.models'] } : {};
+  const current = activeCloudModels(providerId, cloudState);
+  const curProvider = (allModels[providerId] && typeof allModels[providerId] === 'object')
+    ? { ...allModels[providerId] } : {};
+  curProvider[role] = { ...current[role], ...(curProvider[role] || {}), ...patch };
+  allModels[providerId] = curProvider;
+  writePref(HOME_DIR, 'cloud.models', allModels);
+}
+
+function connectedCloudProviders(cloudState) {
+  return (cloudState?.providers || []).filter((p) => p.connected && cloudState.modelsByProvider?.[p.id]?.length);
+}
+
+function cloudHookItems(cloudState) {
+  const active = activeCloudProvider(cloudState);
+  const items = connectedCloudProviders(cloudState).map((p) => ({
+    label: p.label, id: p.id,
+    description: [p.planLabel, formatHeadroom(p.id, cloudState)].filter(Boolean).join(' · ') || undefined
+  }));
+  return [...items.filter((item) => item.id === active), ...items.filter((item) => item.id !== active)];
+}
+
+function requireCloudHook(cloudState, provider) {
+  const connection = connectedCloudProviders(cloudState).find((entry) => entry.id === provider);
+  if (!connection) {
+    const label = PROVIDERS[provider]?.label || 'a cloud hook';
+    throw new Error(`Connect ${label} in the Connect tab, then rescan your cloud hooks.`);
+  }
+  return {
+    cloudProvider: provider, cloudState, planLabel: connection.planLabel || '',
+    models: activeCloudModels(provider, cloudState)
+  };
+}
+
+function cloudLiveQuota(providerId, cloudState) {
+  return providerId === 'claude' ? currentLive() : cloudState?.liveQuotas?.[providerId];
+}
+
+function formatHeadroom(providerId, cloudState) {
+  return activeQuotaWindows(cloudLiveQuota(providerId, cloudState))
+    .map((w) => `${w.label} ${freshQuotaReading(w) ? '' : 'last seen '}${Math.round(w.pct)}% used`).join(' · ');
+}
+
+function buildImpactEstimate({ provider, cloudState, workload }) {
+  const spec = PROVIDERS[provider] || PROVIDERS.claude;
+  const detected = cloudState?.providers?.find((p) => p.id === provider);
+  const providerLabel = detected?.label || spec.label;
+  const planLabel = detected?.planLabel || '';
+  const calibration = cloudState?.calibrations?.[provider];
+  const liveQuota = cloudLiveQuota(provider, cloudState);
+  const alternatives = connectedCloudProviders(cloudState).filter((p) => p.id !== provider).map((p) => {
+    const vals = activeQuotaWindows(cloudLiveQuota(p.id, cloudState)).filter((w) => freshQuotaReading(w)).map((w) => w.pct);
+    return {
+      id: p.id,
+      label: p.label,
+      planLabel: p.planLabel || '',
+      connected: Boolean(p.connected),
+      maxPct: vals.length ? Math.max(...vals) : null
+    };
+  });
+  return estimateSubscriptionImpact({ provider, providerLabel, planLabel, workload, calibration, liveQuota, alternatives });
+}
+
+function quickWorkload(projects, route, { estimateTime, overview = true } = {}) {
+  return estimateQuickWorkload(projects, {
+    estimateTime, overview, provider: route.cloudProvider,
+    projectModel: route.models.project.model, overviewModel: route.models.overview.model,
+    projectEffort: route.models.project.effort, overviewEffort: route.models.overview.effort
+  });
+}
+
+function cloudReviewContext(provider, model, cloudState) {
+  const context = cloudState?.modelsByProvider?.[provider]?.find((entry) => entry.id === model)?.context;
+  const setting = vscode.workspace.getConfiguration('claudeReport').get('deep.cloudContext');
+  if (provider !== 'claude' && Number.isSafeInteger(context) && context >= 2048) return context;
+  return Number.isSafeInteger(setting) && setting >= 2048 ? setting : 200000;
+}
+
+function quotaMetadata(impact) {
+  if (!impact) return {};
+  const { pct5h, pct7d, tokens, requests, requestsMax, confidence, windows } = impact;
+  return { estimatedQuota: { pct5h, pct7d, tokens, requests, requestsMax, confidence, windows } };
+}
 
 async function inspectLocal(cfg, details, signal, fit = false) {
   const result = await runWorker('local-model-worker.js', { ...cfg, details, fit }, signal);
@@ -515,6 +653,14 @@ class Panel {
     this.view = null;
     this.stateRequest = 0;
     this.localRequest = 0;
+    this.cloudState = null;
+    this.cloudScanAt = 0;
+    this.cloudRevision = 0;
+    this.cloudJob = null;
+    this.cloudError = null;
+    this.signInTerminals = new Set();
+    this.lastMonthScan = null;
+    this.estimateRevision = 0;
     this.lastScan = readScanCache();
     this.savedScans = null; // the scan results last written to scan-cache.json
     this.lastState = null; // the newest full state posted, so a late plan answer can be posted on top of it
@@ -587,6 +733,49 @@ class Panel {
     if (m.cmd === 'localEngine') { await setLocal('engine', m.engine === 'ollama' ? 'ollama' : 'lmstudio'); await setLocal('model', ''); return this.scanLocal(); }
     if (m.cmd === 'localPick') { await setLocal('model', String(m.model || '')); return this.scanLocal(); }
     if (m.cmd === 'localMode') { await setLocal('enabled', m.mode === 'local'); return this.scanLocal(); }
+    if (m.cmd === 'cloudScan') return this.scanCloud(true);
+    if (['cloudPickProvider', 'cloudPickModel', 'cloudPickEffort'].includes(m.cmd)) {
+      try {
+        const provider = connectedCloudProviders(this.cloudState).find((entry) => entry.id === m.provider);
+        if (!provider) return;
+        if (m.cmd === 'cloudPickProvider') {
+          await setCloud('provider', m.provider);
+          return;
+        }
+        if (!['project', 'overview'].includes(m.role)) return;
+        const availableModels = this.cloudState.modelsByProvider?.[m.provider] || [];
+        if (m.cmd === 'cloudPickModel' && availableModels.some((entry) => entry.id === m.model)) {
+          updateCloudModelPref(m.provider, m.role, { model: m.model }, this.cloudState);
+        }
+        const model = activeCloudModels(m.provider, this.cloudState)[m.role].model;
+        if (m.cmd === 'cloudPickEffort' && cloudEfforts(m.provider, model, this.cloudState).includes(m.effort)) {
+          updateCloudModelPref(m.provider, m.role, { effort: m.effort }, this.cloudState);
+        }
+      } finally {
+        this.postCloud(m.changeId);
+      }
+      return;
+    }
+    if (m.cmd === 'cloudSignIn') {
+      const spec = PROVIDER_IDS.includes(m.provider) ? PROVIDERS[m.provider] : null;
+      const detected = this.cloudState?.providers?.find((entry) => entry.id === m.provider);
+      if (!spec || !detected?.installed || detected.connected) return;
+      if (detected.loginUrl) return vscode.env.openExternal(vscode.Uri.parse(detected.loginUrl));
+      if (!detected.loginLaunch) return;
+      const { command, args } = detected.loginLaunch;
+      const terminal = vscode.window.createTerminal({
+        name: `${spec.label} sign in`, cwd: os.homedir(), shellPath: command, shellArgs: args,
+        env: providerEnvironment(m.provider), strictEnv: true
+      });
+      this.signInTerminals.add(terminal);
+      terminal.show();
+      return;
+    }
+    if (m.cmd === 'estimateReport') {
+      const d = this.computeEstimate(m);
+      this.post({ type: 'estimate', requestId: m.requestId, d });
+      return;
+    }
     if (m.cmd === 'test') return testHook(this);
     // The folder comes from the host's own dialog, never from the webview.
     if (m.cmd === 'opt') { if (m.key !== 'folder') await setExportOption(m.key, m.value); return this.push(false); }
@@ -602,10 +791,112 @@ class Panel {
     if (m.cmd === 'disconnect') { await uninstallHook(); return this.push(false); }
   }
 
+  cloudPayload() {
+    const cfg = cloudConfig(this.cloudState);
+    const provider = cfg.provider;
+    const spec = PROVIDERS[provider] || PROVIDERS.claude;
+    const models = cfg.models;
+    const detected = this.cloudState?.providers?.find((p) => p.id === provider);
+    const providerLabel = detected?.label || spec.label;
+    const planLabel = detected?.planLabel || '';
+    const formatRole = (r) => `${r.model}${r.effort ? ' · ' + r.effort : ''}`;
+    const providers = Array.isArray(this.cloudState?.providers)
+      ? this.cloudState.providers.map((p) => ({
+        id: p.id,
+        label: p.label,
+        installed: Boolean(p.installed),
+        connected: Boolean(p.connected && this.cloudState.modelsByProvider?.[p.id]?.length),
+        status: p.status,
+        planLabel: p.planLabel || '',
+        reason: p.reason || '',
+        supportsEffort: Boolean(p.supportsEffort),
+        efforts: Array.isArray(p.efforts) ? p.efforts : [],
+        models: this.cloudState.modelsByProvider?.[p.id] || [],
+        selection: p.connected ? activeCloudModels(p.id, this.cloudState) : undefined,
+        canSignIn: Boolean(p.installed && !p.connected && (p.loginLaunch || p.loginUrl)),
+        signInGuide: Boolean(p.loginUrl),
+        selected: p.id === provider,
+        headroom: formatHeadroom(p.id, this.cloudState)
+      }))
+      : [];
+    return {
+      provider,
+      providerLabel,
+      planLabel,
+      project: formatRole(models.project),
+      final: formatRole(models.overview),
+      models,
+      providers,
+      loading: Boolean(this.cloudJob && !this.cloudState),
+      error: this.cloudError,
+      cloudRevision: this.cloudRevision
+    };
+  }
+
+  postCloud(changeId) {
+    const cloud = this.cloudPayload();
+    if (this.lastState) this.lastState = { ...this.lastState, cloud };
+    this.post({ type: 'cloud', changeId, d: cloud });
+  }
+
+  computeEstimate({ projects, depth, deepEffort, provider, estimateTime }) {
+    const output = exportOptions();
+    const dateKey = reportScanKey(output.dateRange);
+    if (this.lastMonthScanKey !== dateKey || !this.lastMonthScan?.projects?.length || !Array.isArray(projects)) return null;
+    const selectedKeys = new Set(projects);
+    let selected = labelProjects(this.lastMonthScan.projects).filter((p) => p.promptCount >= MIN_PROMPTS);
+    selected = selected.filter((p) => selectedKeys.has(projectKey(p)));
+    if (!selected.length) return null;
+
+    const cfg = cloudConfig(this.cloudState);
+    if (provider !== cfg.provider || !connectedCloudProviders(this.cloudState).some((p) => p.id === provider)) return null;
+    const models = cfg.models;
+    const resolvedDepth = depth === 'deep' ? 'deep' : (depth === 'quick' ? 'quick' : output.depth);
+    const resolvedDeepEffort = DEEP_EFFORTS.includes(deepEffort) ? deepEffort : output.deepEffort;
+
+    let workload = quickWorkload(selected, { cloudProvider: provider, models }, {
+      estimateTime: typeof estimateTime === 'boolean' ? estimateTime : output.estimateTime,
+      overview: resolvedDepth !== 'deep'
+    });
+    if (resolvedDepth === 'deep') {
+      // The sidebar scan contains redacted prompt excerpts. Deep scans full messages and
+      // verifies context and cache hits in its own confirmation before any review request.
+      const batchBudget = Math.max(256, budgetFor(cloudReviewContext(provider, models.project.model, this.cloudState)));
+      const planItems = selected.map((p) => {
+        const promptTokens = Array.isArray(p.prompts)
+          ? Math.ceil(Buffer.byteLength(JSON.stringify(p.prompts), 'utf8') / 3) + p.prompts.length * 16
+          : p.promptCount * 90;
+        const contextFraction = resolvedDeepEffort === 'high' ? 0.5 : resolvedDeepEffort === 'medium' ? 0.25 : 0;
+        const contextTokens = contextFraction ? Math.min(batchBudget * 0.36, Math.max(700, promptTokens * contextFraction)) : 0;
+        const chunks = Math.max(1, Math.ceil(promptTokens / Math.max(256, batchBudget - contextTokens)));
+        return { tokens: Math.ceil(promptTokens + contextTokens * chunks), chunks, reused: false };
+      });
+      const deepWl = estimateDeepWorkload(planItems, {
+        provider,
+        projectModel: models.project.model,
+        overviewModel: models.overview.model,
+        projectEffort: models.project.effort,
+        overviewEffort: models.overview.effort,
+        finalizer: true
+      });
+      workload = {
+        requests: workload.requests + deepWl.requests,
+        requestsMax: (workload.requestsMax ?? workload.requests) + (deepWl.requestsMax ?? deepWl.requests),
+        tokensIn: workload.tokensIn + deepWl.tokensIn,
+        tokensInHigh: (workload.tokensInHigh ?? workload.tokensIn) + (deepWl.tokensInHigh ?? deepWl.tokensIn),
+        tokensOutLow: workload.tokensOutLow + deepWl.tokensOutLow,
+        tokensOutHigh: workload.tokensOutHigh + deepWl.tokensOutHigh,
+        peuLow: workload.peuLow + deepWl.peuLow,
+        peuHigh: workload.peuHigh + deepWl.peuHigh
+      };
+    }
+    return buildImpactEstimate({ provider, cloudState: this.cloudState, workload });
+  }
+
   state() {
-    const cfg = vscode.workspace.getConfiguration('claudeReport');
     const local = localConfig();
     const output = exportOptions();
+    const cloud = this.cloudPayload();
     let connected = false;
     // Connected means the setting points at us AND the file it runs exists; otherwise the panel waits forever.
     try { connected = isConnected(JSON.parse(fs.readFileSync(CLAUDE_SETTINGS, 'utf8'))); } catch { /* not readable means not connected */ }
@@ -614,13 +905,14 @@ class Panel {
       version: `v${pkg.version}`,
       connected,
       monthLabel: output.dateRange ? dateRangeLabel(output.dateRange) : monthLabel(monthKey()),
-      models: { project: local.enabled ? `${local.model || 'local model'} · local` : `${cfg.get('reportModel')} · ${cfg.get('reportEffort')}`, final: local.enabled ? 'local model' : `${cfg.get('finalizerModel')} · ${cfg.get('finalizerEffort')}`, local: local.enabled },
+      models: { project: local.enabled ? `${local.model || 'local model'} · local` : cloud.project, final: local.enabled ? 'local model' : cloud.final, local: local.enabled },
       export: output,
       sessions: sessionRows(),
       openProject: workspaceCwd() ? projectNameOf(workspaceCwd()) : null,
       hookLegacy: legacyHook(),
       localPrefs: local,
-      cloud: { project: `${cfg.get('reportModel')} · ${cfg.get('reportEffort')}`, final: `${cfg.get('finalizerModel')} · ${cfg.get('finalizerEffort')}` },
+      cloud,
+      estimateRevision: this.lastMonthScanKey === reportScanKey(output.dateRange) ? this.estimateRevision : null,
       chainMissing: chainMissing(),
       reports: history.filter((r) => !r.archived).map(({ month, run, label, projects, partial, metadata }) => ({
         month, run, label, projects, partial, durationMs: metadata?.durationMs, parentRun: metadata?.parentRun,
@@ -630,6 +922,35 @@ class Panel {
       planSources: SOURCES.filter((s) => s.plan).map((s) => s.id),
       ...planState()
     };
+  }
+
+  async scanCloud(force = false) {
+    if (this.cloudJob) return this.cloudJob;
+    if (!force && this.cloudState && Date.now() - this.cloudScanAt < SCAN_MAX_AGE_MS) {
+      return this.cloudState;
+    }
+    this.cloudError = null;
+    const job = (async () => {
+      try {
+        const res = await runWorker('cloud-scan-worker.js', { homeDir: HOME_DIR, claudeLive: currentLive() }, undefined, SCAN_TIMEOUT_MS);
+        if (!Array.isArray(res?.providers)) throw new Error('No cloud hook discovery result');
+        this.cloudState = res;
+        this.cloudScanAt = Date.now();
+        this.cloudError = null;
+      } catch (e) {
+        log(`cloud scan: ${e && e.message ? e.message : e}`);
+        this.cloudState = null;
+        this.cloudError = 'Cloud hooks could not be checked. Rescan to try again.';
+      } finally {
+        this.cloudJob = null;
+        this.cloudRevision += 1;
+        this.postCloud();
+      }
+      return this.cloudState;
+    })();
+    this.cloudJob = job;
+    if (!this.cloudState) this.postCloud();
+    return job;
   }
 
   async scanLocal() {
@@ -657,9 +978,14 @@ class Panel {
       if (route !== 'oauth-api' || request !== this.stateRequest) return;
       try {
         freshPlan = planState();
-        if (this.lastState) this.post({ type: 'state', d: { ...this.lastState, ...freshPlan } });
+        this.cloudRevision += 1;
+        if (this.lastState) {
+          this.lastState = { ...this.lastState, ...freshPlan, cloud: this.cloudPayload() };
+          this.post({ type: 'state', d: this.lastState });
+        }
       } catch (e) { log(`plan usage refresh: ${e && e.message ? e.message : e}`); }
     });
+    void this.scanCloud(Boolean(force));
     const base = this.state();
     if (this.lastScan?.monthLabel === base.monthLabel) Object.assign(base, this.lastScan);
     this.lastState = { ...base };
@@ -668,10 +994,15 @@ class Panel {
     try {
       const dateRange = base.export.dateRange;
       const month = dateRange ? dateRange.to.slice(0, 7) : monthKey();
-      const key = dateRange ? `range:${dateRange.from}/${dateRange.to}` : `month:${month}`;
+      const key = reportScanKey(dateRange);
       const maxAge = force ? 0 : SCAN_MAX_AGE_MS;
       const [scan, monthScan] = await Promise.all([getScan('days', maxAge), getScan(key, maxAge, { month, dateRange })]);
       scanned = [scan, monthScan];
+      if (request !== this.stateRequest) return;
+      if (this.lastMonthScan !== monthScan || this.lastMonthScanKey !== key) this.estimateRevision += 1;
+      this.lastMonthScan = monthScan;
+      this.lastMonthScanKey = key;
+      base.estimateRevision = this.estimateRevision;
       base.reportProjects = labelProjects(monthScan.projects).filter((p) => p.promptCount > 0)
         .map((p) => ({ id: p.id, name: p.name, hint: p.name === p.baseName ? undefined : p.location,
           prompts: p.promptCount, tokens: p.totalTokens, eligible: p.promptCount >= MIN_PROMPTS }));
@@ -699,6 +1030,7 @@ class Panel {
     }
     if (request !== this.stateRequest) return;
     if (freshPlan) Object.assign(base, freshPlan);
+    base.cloud = this.cloudPayload();
     this.lastScan = { monthLabel: base.monthLabel, metrics: base.metrics, metricSources: base.metricSources, defaultSource: base.defaultSource, reportProjects: base.reportProjects };
     // Scans are reused for two minutes, so most pushes bring nothing new to save.
     if (scanned && base.metrics && !(this.savedScans && scanned.every((s, i) => s === this.savedScans[i]))) {
@@ -833,25 +1165,22 @@ async function createReport(panel, keys) {
   if (!saved) return;
   if (depth === 'deep') {
     const record = loadRun(HOME_DIR, saved.month, saved.run);
-    const deepRun = await deepReport(panel, saved.month, saved.run, record, { effort: deepEffort, finalizeOverview: true });
+    const deepRun = await deepReport(panel, saved.month, saved.run, record, { effort: deepEffort, finalizeOverview: true, route: saved.route });
     if (deepRun) await runExport(saved.month, deepRun);
     return;
   }
   await runExport(saved.month, saved.run);
 }
 
-function defaultModels() {
-  const cfg = vscode.workspace.getConfiguration('claudeReport');
-  return {
-    project: { model: cfg.get('reportModel'), effort: cfg.get('reportEffort') },
-    overview: { model: cfg.get('finalizerModel'), effort: cfg.get('finalizerEffort') }
-  };
+function cloudRunnerFor({ cloudProvider, cloudState }) {
+  return (req) => runCloudProvider({ ...req, provider: cloudProvider, modelEfforts: cloudEfforts(cloudProvider, req.model, cloudState) });
 }
 
 async function runProjectReports(projects, route, runtime) {
   runtime.signal.throwIfAborted();
-  let { project, overview } = route.models;
-  let run = runClaude;
+  let { project, overview } = route.models || {};
+  const { cloudProvider, planLabel } = route;
+  let baseRun;
   const source = route.local ? 'local' : 'cloud';
   let engine, thinking, context;
   if (route.local) {
@@ -861,11 +1190,13 @@ async function runProjectReports(projects, route, runtime) {
     engine = target.engine;
     thinking = thinkingSetting(target.reasoning, target.thinking);
     project = overview = { model: target.model };
-    run = await prepareLocal(target, { signal: runtime.signal });
-    context = run.context;
+    baseRun = await prepareLocal(target, { signal: runtime.signal });
+    context = baseRun.context;
+  } else {
+    baseRun = cloudRunnerFor(route);
   }
-  runtime.event([source, engine, project.model, project.effort, thinking, context && context + ' context tokens'].filter(Boolean).join(' · '));
-  run = runtime.model(run);
+  runtime.event([source, cloudProvider, engine, project.model, project.effort, thinking, context && context + ' context tokens'].filter(Boolean).join(' · '));
+  const run = runtime.model(baseRun);
   runtime.stage('working', 'Writing project reports');
   const maxOutputTokens = route.local ? (context ? Math.min(3600, Math.floor(context * 0.36)) : 2800) : undefined;
   const result = await generateReports({
@@ -877,11 +1208,11 @@ async function runProjectReports(projects, route, runtime) {
   });
   const reports = scrubDeep(result.reports);
   if (route.local) Object.values(reports).forEach((report) => { report.source = 'local'; });
-  return { reports, failures: result.failures, run, overview, provider: source, model: project.model, effort: project.effort, engine, thinking, context };
+  return { reports, failures: result.failures, run, overview, provider: source, cloudProvider, planLabel, model: project.model, effort: project.effort, engine, thinking, context };
 }
 
 async function addGitEvidence(projects, month, cutoff, runtime, dateRange) {
-  runtime.stage('gathering', 'Reading Git history');
+  if (runtime.started) runtime.stage('gathering', 'Reading Git history');
   const git = await runWorker('scan-worker.js', {
     month, cutoff, dateRange, git: projects.map(({ id, name, repositories }) => ({ id, name, repositories }))
   }, runtime.signal);
@@ -902,7 +1233,7 @@ function timeEntries(month, projects, scope = projects) {
   }));
 }
 
-async function writeReport(panel, keys, runtime, { dateRange, estimateTime, depth, deepEffort }) {
+async function writeReport(panel, keys, runtime, { dateRange, estimateTime, depth }) {
   const month = dateRange ? dateRange.to.slice(0, 7) : monthKey();
   const cutoff = reportBounds(month, dateRange).to.toISOString();
   const label = dateRange ? dateRangeLabel(dateRange) : month;
@@ -931,21 +1262,42 @@ async function writeReport(panel, keys, runtime, { dateRange, estimateTime, dept
   }
   const settings = localConfig();
   const local = settings.enabled ? settings : null;
-  const models = defaultModels();
-  const where = local ? 'on this computer with ' + engineName(local.engine) : 'with Claude Code';
+  let route = { local };
+  if (!local) {
+    const cloudState = await panel.scanCloud();
+    let selectedHook = activeCloudProvider(cloudState);
+    if (!keys && connectedCloudProviders(cloudState).length > 1) {
+      const picked = await vscode.window.showQuickPick(cloudHookItems(cloudState), { title: 'Cloud hook for the report' });
+      if (!picked) return;
+      selectedHook = picked.id;
+    }
+    route = requireCloudHook(cloudState, selectedHook);
+  }
+  const { cloudProvider, cloudState } = route;
+  const providerLabel = PROVIDERS[cloudProvider]?.label;
+  const gitProjects = await addGitEvidence(eligible, month, cutoff, runtime, dateRange);
+  const evidence = captureEvidence(gitProjects);
+  const projects = gitProjects.map((p, i) => ({ ...p, prompts: evidence[i].prompts }));
+  const impact = local ? null : buildImpactEstimate({
+    provider: cloudProvider,
+    cloudState,
+    workload: quickWorkload(projects, route, { estimateTime, overview: depth !== 'deep' })
+  });
+  const where = local ? 'on this computer with ' + engineName(local.engine) : 'with ' + providerLabel;
+  const detail = local ? undefined : [
+    'Redacted prompts are sent through your ' + providerLabel + '.', ...impact.detailLines,
+    ...(depth === 'deep' ? ['A separate confirmation will show the planned Deep review workload.'] : [])
+  ].join('\n');
   const ok = await vscode.window.showInformationMessage(
     'Create the ' + label + ' report for ' + eligible.length + (eligible.length === 1 ? ' project ' : ' projects ') + where + '?',
-    local ? { modal: true } : { modal: true, detail: 'Redacted prompts are sent through your Claude Code.' }, 'Create');
+    local ? { modal: true } : { modal: true, detail }, 'Create');
   if (ok !== 'Create') return;
 
   vscode.commands.executeCommand('workbench.view.extension.claudeReport');
   panel.post({ type: 'tab', tab: 'report' });
   runtime.start();
   runtime.event('Preflight activity scan', scanDuration);
-  const gitProjects = await addGitEvidence(eligible, month, cutoff, runtime, dateRange);
-  const evidence = captureEvidence(gitProjects);
-  const projects = gitProjects.map((p, i) => ({ ...p, prompts: evidence[i].prompts }));
-  const result = await runProjectReports(projects, { local, models, estimateTime }, runtime);
+  const result = await runProjectReports(projects, { ...route, estimateTime }, runtime);
   if (!Object.keys(result.reports).length) throw new Error('Every project failed. See the project rows and runtime log for details.');
 
   const user = accountUsername();
@@ -955,8 +1307,9 @@ async function writeReport(panel, keys, runtime, { dateRange, estimateTime, dept
   const data = buildData({ month, scan: { projects }, reports: result.reports, user, overview, now: new Date(cutoff), dateRange });
   data.failures = result.failures;
   const run = saveGeneratedReport(panel, data, result, runtime, { cutoff, evidenceKind: 'sampled', kind: 'generated', estimateTime,
+    ...quotaMetadata(impact),
     ...(depth === 'deep' && { pendingOverview: true }) }, evidence);
-  return { month, run };
+  return { month, run, route };
 }
 
 async function writeOverview({ user, month, projects, result, runtime, dateRange }) {
@@ -967,11 +1320,11 @@ async function writeOverview({ user, month, projects, result, runtime, dateRange
 }
 
 function saveGeneratedReport(panel, data, result, runtime, metadata, evidence) {
-  const { provider, model, effort, engine, thinking, context } = result;
+  const { provider, cloudProvider, planLabel, model, effort, engine, thinking, context } = result;
   runtime.signal.throwIfAborted();
   runtime.stage('saving', 'Saving the report');
   const run = saveRun(HOME_DIR, data, reportsByProject(data.projects), renderDocument(data), new Date(), {
-    metadata: { ...metadata, provider, model, effort, engine, thinking, context, ...runtime.metadata() }, evidence
+    metadata: { ...metadata, provider, ...(cloudProvider ? { cloudProvider, planLabel: planLabel || '' } : {}), model, effort, engine, thinking, context, ...runtime.metadata() }, evidence
   });
   const partial = Boolean(data.failures?.length);
   runtime.stage('done', partial ? 'Partial report saved' : metadata.pendingOverview ? 'Project drafts saved' : 'Report ready', { month: data.month, run, partial });
@@ -1058,17 +1411,20 @@ async function deepReport(panel, month, parentRun, record, options = {}) {
     const inline = inlineProjects.length ? await runWorker('scan-worker.js', {
       deepGit: inlineProjects, month, cutoff, effort: 'high', dateRange: data.dateRange
     }, runtime.signal) : {};
-    const config = localConfig();
-    const local = config.enabled;
+    const config = options.route ? options.route.local : localConfig();
+    const local = Boolean(options.route ? config : config.enabled);
     const target = local ? await resolveLocal(config, runtime.signal) : null;
-    const models = defaultModels();
-    const model = { model: target?.model || models.project.model || 'haiku', effort: models.project.effort || 'medium' };
-    const finalModel = { model: target?.model || models.overview.model || 'sonnet', effort: models.overview.effort || 'high' };
-    const cloudContext = vscode.workspace.getConfiguration('claudeReport').get('deep.cloudContext');
-    let context = target?.loadedContext || target?.reportContext || (local ? 8192 :
-      Number.isSafeInteger(cloudContext) && cloudContext >= 2048 ? cloudContext : 200000);
+    let route = options.route;
+    if (!local && !route) {
+      const cloudState = await panel.scanCloud();
+      route = requireCloudHook(cloudState, activeCloudProvider(cloudState));
+    }
+    const { cloudState, cloudProvider, planLabel, models } = route || {};
+    const model = target ? { model: target.model } : models.project;
+    const finalModel = target ? model : models.overview;
+    let context = target?.loadedContext || target?.reportContext || (local ? 8192 : cloudReviewContext(cloudProvider, model.model, cloudState));
     let budget = budgetFor(context);
-    const cache = reviewCache(HOME_DIR, { period: data.dateRange || month, provider: target?.engine || 'cloud',
+    const cache = reviewCache(HOME_DIR, { period: data.dateRange || month, provider: target?.engine || ('cloud:' + cloudProvider),
       model: model.model, reasoning: target ? Boolean(config.thinking) : model.effort });
     const describe = (plans) => plans.map((item) =>
       item.name + ' · ' + item.prompts + ' messages, ' + item.words.toLocaleString() + ' words, ~' +
@@ -1081,15 +1437,35 @@ async function deepReport(panel, month, parentRun, record, options = {}) {
         reused: Boolean(cached), diffExcerpts: details.diffExcerpts };
     });
     let prepared = makePlan();
-    const requestCount = plannedRequests(summarizePlan(prepared)).review + 1;
+    const initialPlan = summarizePlan(prepared);
+    const finalize = Boolean(reviews.length || options.finalizeOverview || record.metadata.pendingOverview);
+    const requestCount = plannedRequests(initialPlan).review + Number(finalize);
+    const impact = target ? null : buildImpactEstimate({
+      provider: cloudProvider,
+      cloudState,
+      workload: estimateDeepWorkload(initialPlan, {
+        provider: cloudProvider,
+        projectModel: model.model,
+        overviewModel: finalModel.model,
+        projectEffort: model.effort,
+        overviewEffort: finalModel.effort,
+        overviewProjects: data.projects.length,
+        finalizer: finalize
+      })
+    });
+    const modalLines = [
+      effort[0].toUpperCase() + effort.slice(1) + ' depth · ' + requestCount + (requestCount === 1 ? ' model request planned.' : ' model requests planned.'),
+      ...(cloudProvider ? [`Redacted prompts and selected project context are sent through your ${PROVIDERS[cloudProvider].label}.`] : []),
+      ...(impact?.detailLines || [])
+    ];
     const ok = await vscode.window.showInformationMessage('Run a Deep prompting review?',
-      { modal: true, detail: effort[0].toUpperCase() + effort.slice(1) + ' depth · ' + requestCount + (requestCount === 1 ? ' model request.' : ' model requests.') }, 'Run Deep review');
+      { modal: true, detail: modalLines.join('\n') }, 'Run Deep review');
     runtime.signal.throwIfAborted();
     if (ok !== 'Run Deep review') {
       runtime.stage('cancelled', 'Deep review cancelled');
       return;
     }
-    let runner = runClaude;
+    let runner;
     if (target) {
       runtime.stage('gathering', 'Preparing the Deep review model');
       const localRunner = await prepareLocal({ ...target, deepEffort: config.thinking ? 'medium' : 'low' }, { signal: runtime.signal });
@@ -1100,17 +1476,19 @@ async function deepReport(panel, month, parentRun, record, options = {}) {
       }
       runtime.event('Deep reasoning setting: ' + (localRunner.thinking || 'model default'));
       prepared = makePlan();
+    } else {
+      runner = cloudRunnerFor(route);
     }
     const plan = summarizePlan(prepared);
     for (const line of describe(plan).split('\n').filter(Boolean)) runtime.event(line);
-    runtime.event('Requests for this run: ' + (requestCount - 1) + ' project review ' + (requestCount === 2 ? 'request' : 'requests') + ' at ' + effort + ' depth, then 1 final synthesis.');
+    runtime.event('Requests for this run: ' + plannedRequests(plan).review + ' project reviews at ' + effort + ' depth' + (finalize ? ', then up to 1 final synthesis.' : '.'));
     runtime.event(model.model + ' · ' + (target ? 'one project at a time' : 'up to ' + Math.min(DEEP_CONCURRENCY, reviews.length) + ' project reviews at once'));
     const reviewing = plan.some((item) => !item.reused && item.chunks > 1)
       ? 'Reviewing larger projects in session batches'
       : 'Reviewing projects at ' + effort + ' depth';
     runtime.stage('working', reviewing);
     // The plan above is a hard cap: a stray request for another depth or past the planned count is refused before it runs.
-    const requestGuard = requestBudget({ depth: effort, limits: { 'deep-review': plannedRequests(plan).limit, overview: 1 } });
+    const requestGuard = requestBudget({ depth: effort, limits: { 'deep-review': plannedRequests(plan).limit, overview: Number(finalize) } });
     const run = requestGuard(runtime.model((request) => runner({ ...request,
       onTokenUsage: (count) => runtime.event(request.label + ' · actual input ' + count.toLocaleString() + ' tokens') })));
     const audited = new Map();
@@ -1154,8 +1532,10 @@ async function deepReport(panel, month, parentRun, record, options = {}) {
     }
     runtime.signal.throwIfAborted();
     runtime.stage('saving', 'Saving Deep prompting review');
+    const { cloudProvider: previousHook, planLabel: previousPlan, estimatedQuota: previousEstimate, ...priorMetadata } = record.metadata;
     saved = saveRun(HOME_DIR, revised, reportsByProject(revised.projects), renderDocument(revised), new Date(), {
-      metadata: { ...record.metadata, cutoff, parentRun, kind: 'deep', provider: target ? 'local' : 'cloud',
+      metadata: { ...priorMetadata, cutoff, parentRun, kind: 'deep', provider: target ? 'local' : 'cloud',
+        ...(cloudProvider ? { cloudProvider, planLabel, ...quotaMetadata(impact) } : {}),
         model: model.model, effort, finalizerModel: finalModel.model, pendingOverview: false, deepPlan: plan, ...runtime.metadata() },
       evidence: record.evidence
     });
@@ -1166,20 +1546,32 @@ async function deepReport(panel, month, parentRun, record, options = {}) {
   return saved;
 }
 
-async function chooseEnhancementRoute() {
-  const provider = await vscode.window.showQuickPick(['Cloud', 'Local'], { title: 'Enhancement provider' });
-  if (!provider) return;
-  const models = defaultModels();
-  if (provider === 'Cloud') {
-    const model = await vscode.window.showQuickPick(
-      ['sonnet', 'opus', ...MODELS.filter((value) => value !== 'sonnet' && value !== 'opus')],
-      { title: 'Claude Code model for this enhancement' });
-    if (!model) return;
-    const effort = await vscode.window.showQuickPick(['high', ...EFFORTS.filter((value) => value !== 'high')], {
-      title: 'Claude Code effort for this enhancement'
-    });
-    if (effort) return { models: { project: { model, effort }, overview: { model, effort } }, description: `${model} · ${effort}` };
-    return;
+async function chooseEnhancementRoute(panel) {
+  const cloudState = await panel.scanCloud();
+  const hook = await vscode.window.showQuickPick([...cloudHookItems(cloudState), { id: 'local', label: 'Local model' }], {
+    title: 'Hook for this enhancement'
+  });
+  if (!hook) return;
+  if (hook.id !== 'local') {
+    const route = requireCloudHook(cloudState, hook.id);
+    const spec = PROVIDERS[hook.id];
+    const available = cloudState.modelsByProvider[hook.id];
+    const picked = await vscode.window.showQuickPick(available.map((model) => ({
+      id: model.id, label: model.label || model.id, description: model.id === route.models.project.model ? 'Report default' : undefined
+    })), { title: `${spec.label} model for this enhancement` });
+    if (!picked) return;
+    const model = picked.id;
+    let effort = '';
+    const efforts = cloudEfforts(hook.id, model, cloudState);
+    if (efforts?.length) {
+      effort = await vscode.window.showQuickPick(efforts, { title: `${spec.label} effort for this enhancement` });
+      if (!effort) return;
+    }
+    return {
+      ...route,
+      models: { project: { model, effort }, overview: { model, effort } },
+      description: `${spec.label} · ${picked.label}${effort ? ' · ' + effort : ''}`
+    };
   }
 
   const prefs = localConfig();
@@ -1209,7 +1601,7 @@ async function chooseEnhancementRoute() {
   } else {
     target.thinking = false;
   }
-  return { local: selection, target, models, description: `${target.model} · ${engine}` };
+  return { local: selection, target, description: `${target.model} · ${engine}` };
 }
 
 async function enhancementProjects(data, failedOnly) {
@@ -1230,7 +1622,7 @@ async function getEnhancementEvidence(selected, record, month, cutoff, runtime) 
   const missing = selected.filter((project) => !captured.has(projectKey(project)));
   const rebuilt = new Map();
   if (missing.length) {
-    runtime.stage('gathering', 'Rebuilding evidence from available history');
+    if (runtime.started) runtime.stage('gathering', 'Rebuilding evidence from available history');
     const scan = await runWorker('scan-worker.js', { month, cutoff, dateRange: record.data.dateRange }, runtime.signal);
     const matches = missing.map((project) => {
       const match = matchLegacyProject(project, scan.projects);
@@ -1268,18 +1660,22 @@ async function enhanceReport(panel, month, parentRun, record, { failedOnly = fal
     const { data, metadata } = record;
     const selected = await enhancementProjects(data, failedOnly);
     if (!selected.length) return;
-    const route = await chooseEnhancementRoute();
+    const route = await chooseEnhancementRoute(panel);
     if (!route) return;
     const { estimateTime } = exportOptions();
     const all = selected.length === data.projects.length;
-    const known = new Set((record.evidence || []).map(projectKey));
-    const requiresRebuild = selected.some((project) => !known.has(projectKey(project)));
     const cutoff = originalCutoff(month, parentRun, record);
-    const detail = selected.length + (selected.length === 1 ? ' project' : ' projects') + ' · ' + route.description + '.' +
-      (route.local ? '' : ' Redacted prompts are sent through your Claude Code.');
+    const input = await getEnhancementEvidence(selected, record, month, cutoff, runtime);
+    const impact = route.local ? null : buildImpactEstimate({
+      provider: route.cloudProvider, cloudState: route.cloudState,
+      workload: quickWorkload(input.projects, route, { estimateTime, overview: all })
+    });
+    const detail = [
+      selected.length + (selected.length === 1 ? ' project' : ' projects') + ' · ' + route.description + '.',
+      ...(impact ? [`Redacted prompts are sent through your ${PROVIDERS[route.cloudProvider].label}.`, ...impact.detailLines] : [])
+    ].join('\n');
     if (await vscode.window.showInformationMessage('Enhance this saved report?', { modal: true, detail }, 'Enhance') !== 'Enhance') return;
     runtime.start();
-    const input = await getEnhancementEvidence(selected, record, month, cutoff, runtime);
     const result = await runProjectReports(input.projects, { ...route, estimateTime }, runtime);
     if (!Object.keys(result.reports).length) throw new Error('Enhancement failed for every selected project. See the runtime log for details.');
     const evidenceById = new Map(input.projects.map((p) => [p.id, p]));
@@ -1306,7 +1702,7 @@ async function enhanceReport(panel, month, parentRun, record, { failedOnly = fal
       revised.overviewStale = !revised.overview;
     }
     saveGeneratedReport(panel, revised, result, runtime, {
-      cutoff, parentRun, overrides: metadata.overrides, kind: 'enhanced', estimateTime,
+      cutoff, parentRun, overrides: metadata.overrides, kind: 'enhanced', estimateTime, ...quotaMetadata(impact),
       evidenceKind: input.rebuilt || input.evidence.some((p) => p.rebuilt) ? 'rebuilt' : 'sampled',
     }, input.evidence);
   });
@@ -1393,6 +1789,11 @@ function activate(context) {
   };
   const reg = (id, fn) => context.subscriptions.push(vscode.commands.registerCommand(id, fn));
   context.subscriptions.push(...slots, vscode.window.registerWebviewViewProvider('claudeReport.metrics', panel, { webviewOptions: { retainContextWhenHidden: true } }));
+  if (vscode.window.onDidCloseTerminal) {
+    context.subscriptions.push(vscode.window.onDidCloseTerminal((terminal) => {
+      if (panel.signInTerminals.delete(terminal)) void panel.scanCloud(true);
+    }));
+  }
   reg('claudeReport.openMetrics', () => vscode.commands.executeCommand('workbench.view.extension.claudeReport'));
   reg('claudeReport.diagnose', () => diagnose());
   reg('claudeReport.refresh', () => panel.reloadAll());

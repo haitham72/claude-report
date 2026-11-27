@@ -16,6 +16,8 @@ Claude Report is built to work on your computer. This page lists exactly what it
 | `~/.claude/.credentials.json` or the macOS Keychain entry `Claude Code-credentials` | Local Claude Code login token, used only to call Anthropic’s plan-usage API (same as `/usage`). Never logged or copied elsewhere. Off via `claudeReport.planUsage.enabled` |
 | `%TEMP%/claude_oauth_usage.json` (or `$TMPDIR`) when present | Shared plan-usage cache written by Claude Code status tools, Claude Control, or this extension |
 | `~/.claude.json` | Only the part of your account email before the `@`, to show a username on a report. The address itself is never stored or sent |
+| Native CLI status, model lists, and local sign-in files for the supported cloud hooks | Read-only checks verify the login mode, available models, and quota readings where the CLI provides them. Local auth metadata may be stored in credential files. The extension records the sign-in status and omits credential values from logs, preferences, and reports |
+| Local Claude Code and Codex token usage and quota history | Matches token totals with recent changes in quota utilization for the report impact estimate. The calculation uses token counts, models, timestamps and quota readings |
 | `nvidia-smi` output | GPU name and memory, to estimate local model limits |
 | `localhost:1234` and `localhost:11434` | Only when you choose Local: the model list from LM Studio or Ollama |
 
@@ -29,10 +31,10 @@ Claude Report keeps its working files under `~/.claude-report/`.
 - `%TEMP%/claude_oauth_usage.json` (or `$TMPDIR`): last plan-usage payload shared with other local status tools. Only the five-hour and weekly utilization (and reset times) are written.
 - `scan-cache.json`: the last Metrics and project list, so the sidebar shows them at once after a restart while a new scan runs. Project names, folders, counts and token totals; no prompts. Ignored once it is two days old.
 - `config.json`: your previous status line command, kept so it can be restored.
-- `prefs.json` keeps your Cloud or Local choice, engine, model and any previously entered time evidence. New time entries are saved with the report example.
+- `prefs.json` keeps your Cloud or Local choice, selected cloud hook and models, local engine, model and any previously entered time evidence. New time entries are saved with the report example.
 - `runtime/`: a copy of the hook script.
 - `reports/<month>/runs/<timestamp>/` holds `report.html`, `report.json` and `reports.json` for each run. Legacy reports may be stored directly under the month.
-- A saved run can also keep a private redacted sample of up to 60 prompts per project, the original date cutoff, model and runtime details, and its parent revision. Archive status and successfully exported copy paths are stored alongside the run. These records are separate from the HTML, PDF and report data you share.
+- A saved run can also keep a private redacted sample of up to 60 prompts per project, the original date cutoff, cloud hook, workload estimate, model and runtime details, and its parent revision. Archive status and successfully exported copy paths are stored alongside the run. These records are separate from the HTML, PDF and report data you share.
 
 And, only when you press **Connect**, one change to `~/.claude/settings.json`: the `statusLine` entry. A backup `settings.json.claude-report.bak` is written once, and **Disconnect** puts your previous entry back. A saved copy or PDF goes to the folder you chose, and an email draft is only opened, never sent.
 
@@ -42,14 +44,14 @@ Model requests are made when you confirm **Create report**, **Enhance report** o
 
 **Deep prompting review** asks for separate confirmation after counting and planning locally. Low sends redacted user messages. Medium includes relevant filenames and project context in the same project review. High also includes selected inline diff excerpts. The final synthesis receives the project cards and validated review findings. The exported revision includes findings, timestamp references, filenames and available line ranges. The private `~/.claude-report/deep-review-cache/` stores source fingerprints, check times and project findings for reuse. Raw Deep messages, inline diffs and documentation excerpts are excluded from the cache, synthesis input, and exported report.
 
-- **Cloud mode** sends redacted prompts, activity totals and summaries of available Git evidence through the `claude` command using your Claude Code sign-in and plan. The extension runs the command with `--no-session-persistence` in a temporary working folder.
+- **Cloud mode** sends redacted prompts, activity totals and summaries of available Git evidence through the selected CLI using its existing subscription sign-in. Each run uses a dedicated temporary workspace with ephemeral or no-session flags where supported.
 - **Local mode** sends the project and overview inputs to the model server on this computer.
 
 When an overview is generated, its input contains the project summaries and activity coverage across the period. Enhancement uses the saved sample where available. For an older run, it can rebuild evidence from activity still available for the original report period.
 
 **Plan usage** (Metrics gauges and status-bar 5h/7d), when `claudeReport.planUsage.enabled` is on (the default), sends your existing Claude Code login token to `api.anthropic.com/api/oauth/usage` over HTTPS — the same endpoint `/usage` uses. The token is read locally and never stored by Claude Report. Turn the setting off to stop those requests; gauges then rely only on the status-line hook and any shared cache already on disk. API-key-only logins have no OAuth token, so this path stays empty.
 
-Nothing else is sent when you open the sidebar, browse sessions or look at metrics. There is no telemetry, no analytics and no Claude Report account.
+**Cloud hook discovery** can run native CLI commands for account status, available models or quota. The provider may receive a signed-in account request from its CLI. Discovery uses zero model turns and does not send report evidence. There is no Claude Report telemetry, analytics or account.
 
 ## What is removed before sending
 

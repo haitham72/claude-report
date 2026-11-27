@@ -174,6 +174,21 @@ html, body { margin: 0; padding: 0; font-family: var(--vscode-font-family); font
 .fold-t { appearance: none; display: inline-flex; align-items: center; gap: 7px; min-width: 0; padding: 0; border: 0; background: transparent; color: inherit; font: inherit; letter-spacing: inherit; text-transform: inherit; cursor: pointer; }
 .cp-scope .chev { width: 10px; height: 10px; flex: 0 0 auto; transition: transform .15s ease; }
 .cp-scope.closed .chev { transform: rotate(-90deg); }
+.cloud-expand { width: 22px; height: 22px; border-color: transparent; }
+.cloud-expand .chev { width: 10px; height: 10px; transition: transform .15s ease; }
+.cloud-expand[aria-expanded="false"] .chev { transform: rotate(-90deg); }
+.cloud-hook { gap: 5px; padding: 0 7px 0 0; }
+.cloud-hook:hover { background: var(--row-hover); }
+.cloud-choice { appearance: none; border: 0; background: transparent; color: inherit; font: inherit; text-align: left; cursor: pointer; }
+.cloud-hook .cloud-choice { display: flex; align-items: center; flex: 1; gap: 9px; min-width: 0; padding: 5px 0 5px 14px; }
+.cloud-choice.row { width: calc(100% - 8px); }
+.cloud-choice[aria-disabled="true"], .cloud-drawer [aria-disabled="true"] { cursor: wait; }
+.cloud-drawer { margin: 2px 4px 6px 19px; padding: 4px 0 4px 7px; }
+.cloud-roles { padding: 2px 11px 4px 4px; }
+.cloud-roles .seg { max-width: 100%; }
+.cloud-roles .seg button { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
+.cloud-effort { flex-wrap: wrap; }
+.row .body .l .badge { margin-left: 5px; vertical-align: 1px; font-size: 8.5px; padding: 1px 6px; }
 /*__METRICS_CSS__*/
 .row .state { width: auto; min-width: 24px; }
 </style>
@@ -188,6 +203,14 @@ html, body { margin: 0; padding: 0; font-family: var(--vscode-font-family); font
   // Sections the user closed and folded lists they opened, kept across redraws and reloads.
   S.closed = saved.closed && typeof saved.closed === 'object' ? saved.closed : {};
   S.more = saved.more && typeof saved.more === 'object' ? saved.more : {};
+  S.cloudOpen = saved.cloudOpen && typeof saved.cloudOpen === 'object' ? saved.cloudOpen : {};
+  S.cloudRole = saved.cloudRole === 'overview' ? 'overview' : 'project';
+  S.estimate = null;
+  S.estimateKey = '';
+  S.estimateRequest = 0;
+  S.estimatePending = false;
+  S.cloudChange = 0;
+  S.cloudChanging = false;
   S.phases = [];
   var app = document.getElementById('app');
   var splash = function (text) { return '<div class="splash"><svg class="logo" viewBox="0 0 64 64" aria-hidden="true"><rect class="b b1" x="10" y="32" width="12" height="22" rx="4"/><rect class="b b2" x="26" y="20" width="12" height="34" rx="4"/><rect class="b b3" x="42" y="8" width="12" height="46" rx="4"/></svg><div class="sp-t">Claude Report</div><div class="sp-s">AI activity and reports</div><div class="sp-bar"><span></span></div><div class="sp-m">' + esc(text) + '</div></div>'; };
@@ -203,7 +226,7 @@ html, body { margin: 0; padding: 0; font-family: var(--vscode-font-family); font
   };
   var TABS = [['sessions', 'Sessions'], ['metrics', 'Metrics'], ['report', 'Report'], ['connect', 'Connect']];
   var post = function (m) { api.postMessage(m); };
-  var persist = function () { api.setState({ tab: S.tab, openOnly: S.openOnly, sessOnly: S.sessOnly, metricSource: S.metricSource, sel: S.sel, progressView: S.progressView, closed: S.closed, more: S.more }); };
+  var persist = function () { api.setState({ tab: S.tab, openOnly: S.openOnly, sessOnly: S.sessOnly, metricSource: S.metricSource, sel: S.sel, progressView: S.progressView, closed: S.closed, more: S.more, cloudOpen: S.cloudOpen, cloudRole: S.cloudRole }); };
 
   // A section heading that folds its section: the whole heading is the target, the inner button
   // gives keyboard focus and the expanded state. Links and buttons in `extra` keep their own actions.
@@ -362,19 +385,103 @@ html, body { margin: 0; padding: 0; font-family: var(--vscode-font-family); font
     return h + '</div></section>';
   }
 
+  function selectedCloud(cloud) {
+    return cloud && !cloud.loading && !cloud.error && Array.isArray(cloud.providers)
+      ? cloud.providers.find(function (p) { return p.id === cloud.provider && p.connected; }) : null;
+  }
+
+  function cloudSummaryText(d) {
+    var cloud = (d && (d.cloud || d.models)) || null;
+    if (!cloud) return '';
+    if (Array.isArray(cloud.providers)) {
+      var p = selectedCloud(cloud);
+      if (!p) return '';
+      return [p.label || p.id, cloud.project && cloud.project + ' per project', cloud.final && cloud.final + ' overview'].filter(Boolean).join(' · ');
+    }
+    if (cloud.project || cloud.final) {
+      return [cloud.project ? cloud.project + ' per project' : '', cloud.final ? cloud.final + ' overview' : ''].filter(Boolean).join(' · ');
+    }
+    return '';
+  }
+
+  function cloudHooksBlock(prefix) {
+    var d = S.d || {};
+    var cloud = d.cloud || d.models || {};
+    if (cloud.loading) return '<div class="cp-note" role="status">Checking for signed-in cloud hooks…</div>';
+    if (cloud.error) return '<div class="cp-note">Could not check for signed-in cloud hooks.</div>';
+    var providers = Array.isArray(cloud.providers) ? cloud.providers : null;
+    if (!providers) {
+      return '<div class="kv"><span class="k">Per project</span><span class="v"><span class="val">' + esc(cloud.project || 'haiku · medium') + '</span></span><span class="sub">one worker for each project</span></div>' +
+        '<div class="kv"><span class="k">Overview</span><span class="v"><span class="val">' + esc(cloud.final || 'sonnet · high') + '</span></span><span class="sub">writes the three monthly cards</span></div>';
+    }
+    var connected = providers.filter(function (p) { return p.connected; });
+    if (!connected.length) {
+      return '<div class="cp-note">No signed-in cloud hook found.</div>';
+    }
+    var role = S.cloudRole === 'overview' ? 'overview' : 'project';
+    var disabled = S.cloudChanging ? ' aria-disabled="true"' : '';
+    return connected.map(function (p) {
+      var active = cloud.provider === p.id;
+      var open = S.cloudOpen[p.id] !== undefined ? !!S.cloudOpen[p.id] : active;
+      var selObj = p.selection || {};
+      var projSel = (selObj.project && selObj.project.model) || '';
+      var overSel = (selObj.overview && selObj.overview.model) || '';
+      var activeRoleSel = selObj[role] || {};
+      var headroom = p.headroom && typeof p.headroom === 'object' ? (p.headroom.label || '') : (p.headroom || '');
+      var controlId = 'cloud-control-' + esc(p.id) + '-';
+      var row = '<div class="row cloud-hook">' +
+        '<button type="button" id="' + controlId + 'pick" class="cloud-choice click" aria-pressed="' + active + '"' + disabled + ' data-cloud-provider="' + esc(p.id) + '">' +
+        '<span class="rb' + (active ? ' on' : '') + '" aria-hidden="true"></span>' +
+        '<span class="body"><span class="l">' + esc(p.label || p.id) + (p.planLabel ? ' <span class="badge">' + esc(p.planLabel) + '</span>' : '') + '</span></span>' +
+        (headroom ? '<span class="state">' + esc(headroom) + '</span>' : '') + '</button>' +
+        '<button type="button" id="' + controlId + 'expand" class="iconbtn cloud-expand" data-cloud-expand="' + esc(p.id) + '" aria-expanded="' + open + '" aria-label="' + esc((open ? 'Collapse ' : 'Expand ') + (p.label || p.id)) + '">' + CHEV + '</button>' +
+        '</div>';
+      if (!open) return row;
+      var models = Array.isArray(p.models) ? p.models : [];
+      var activeModel = models.find(function (m) { return m && m.id === activeRoleSel.model; });
+      var modelRows = models.map(function (m) {
+        var mId = typeof m === 'string' ? m : m.id;
+        var mLabel = typeof m === 'string' ? m : (m.label || m.id);
+        var mMeta = typeof m === 'string' ? '' : [m.tier, m.context ? Math.round(m.context / 1000) + 'k' : ''].filter(Boolean).join(' · ');
+        var isSel = activeRoleSel.model === mId;
+        return '<button type="button" id="' + controlId + 'model-' + esc(mId) + '" class="row click cloud-choice" aria-pressed="' + isSel + '"' + disabled + ' data-cloud-model="' + esc(mId) + '" data-provider="' + esc(p.id) + '">' +
+          '<span class="rb' + (isSel ? ' on' : '') + '" aria-hidden="true"></span>' +
+          '<span class="body"><span class="l">' + esc(mLabel) + '</span>' + (mMeta ? '<span class="d">' + esc(mMeta) + '</span>' : '') + '</span>' +
+          '</button>';
+      });
+      var drawer = '<div class="cloud-drawer progress-branches">' +
+        '<div class="cloud-roles"><span class="seg" role="group" aria-label="' + esc(p.label || p.id) + ' model role">' +
+          '<button type="button" id="' + controlId + 'project" data-cloud-role="project" class="' + (role === 'project' ? 'on' : '') + '" aria-pressed="' + (role === 'project') + '">Per project' + (projSel ? ' · ' + esc(projSel) : '') + '</button>' +
+          '<button type="button" id="' + controlId + 'overview" data-cloud-role="overview" class="' + (role === 'overview' ? 'on' : '') + '" aria-pressed="' + (role === 'overview') + '">Overview' + (overSel ? ' · ' + esc(overSel) : '') + '</button>' +
+        '</span></div>' +
+        (modelRows.length ? fold(prefix + '-cm-' + p.id, modelRows, 5) : '<div class="cp-note">Using the CLI’s default model.</div>');
+      var efforts = activeModel && Array.isArray(activeModel.efforts) ? activeModel.efforts : (p.efforts || []);
+      if (efforts.length) {
+        var curEffort = activeRoleSel.effort || (activeModel && activeModel.defaultEffort);
+        drawer += '<div class="row cloud-effort"><div class="body"><div class="l">Effort</div></div><span class="seg" role="group" aria-label="Effort">' +
+          efforts.map(function (ef) {
+            var onEf = curEffort === ef;
+            return '<button type="button" id="' + controlId + 'effort-' + esc(ef) + '"' + disabled + ' data-cloud-effort="' + esc(ef) + '" data-provider="' + esc(p.id) + '" data-role="' + esc(role) + '" class="' + (onEf ? 'on' : '') + '" aria-pressed="' + onEf + '">' + esc(ef) + '</button>';
+          }).join('') + '</span></div>';
+      }
+      drawer += '</div>';
+      return row + drawer;
+    }).join('');
+  }
+
   function reportPage() {
     var d = S.d || {};
     var picks = d.reportProjects || [];
     var n = chosen().length;
     var ex = d.export || {};
     var local = S.local || d.localPrefs || {};
-    var cloud = d.cloud || d.models;
     var P = d.localPrefs || {};
     var lOn = !!local.enabled;
     var lModel = local.model || P.model || '';
-    // No pick is fine: the host starts the server and takes the best model that fits the GPU.
-    var needModel = false;
     var busy = S.running;
+    var cloud = d.cloud || {};
+    var cloudBlocked = !lOn && (cloud.loading || cloud.error || (Array.isArray(cloud.providers) && !selectedCloud(cloud)));
+    var cannotCreate = busy || !n || cloudBlocked || S.cloudChanging;
     var h = '<div class="cp-scope"><span class="dot"></span>Report<span class="path">' + esc(d.monthLabel || '') + '</span></div>';
 
     h += head('r-projects', 'Projects <span style="opacity:.6;letter-spacing:.04em">· prompts</span>',
@@ -385,7 +492,7 @@ html, body { margin: 0; padding: 0; font-family: var(--vscode-font-family); font
         var id = projectId(p);
         var on = p.eligible && S.sel[id] !== false;
         return '<div class="row click' + (p.eligible && !busy ? '' : ' off') + '" data-proj="' + esc(id) + '"' + (p.hint ? ' title="' + esc(p.hint) + '"' : '') + '><span class="cb' + (on ? ' on' : '') + '"></span><div class="body"><div class="l">' + esc(p.name) + '</div></div><span class="state" title="' + p.prompts + ' prompts">' + p.prompts + '</span></div>';
-      }));
+      }), 5);
     }
 
     var sw = function (key, label, desc) {
@@ -397,11 +504,13 @@ html, body { margin: 0; padding: 0; font-family: var(--vscode-font-family); font
     var engName = '';
     var engId = local.engine || P.engine;
     if (engId) engName = ((local.engines || []).filter(function (e) { return e.engine === engId; })[0] || {}).name || ({ lmstudio: 'LM Studio', ollama: 'Ollama' })[engId] || '';
-    var modelDesc = lOn ? (lModel ? esc(lModel) : 'Auto: best model that fits') + (engName ? ' · ' + esc(engName) : '') : cloud ? esc(cloud.project) + ' per project · ' + esc(cloud.final) + ' overview' : '';
+    var cloudLine = cloudSummaryText(d);
+    var modelDesc = lOn ? (lModel ? esc(lModel) : 'Auto: best model that fits') + (engName ? ' · ' + esc(engName) : '') : esc(cloudLine);
     h += head('r-model', 'Model', '<span class="path">' + (lOn ? 'Local' : 'Cloud') + '</span>', 'sub');
     if (!shut('r-model')) h += '<div class="row"><div class="body"><div class="l">Run on</div><div class="d">' + modelDesc + '</div></div><span class="seg" role="group" aria-label="Run on">' +
       '<button type="button" data-mode="cloud" class="' + (lOn ? '' : 'on') + '" aria-pressed="' + !lOn + '">Cloud</button>' +
       '<button type="button" data-mode="local" class="' + (lOn ? 'on' : '') + '" aria-pressed="' + lOn + '">Local</button></span></div>';
+    if (!shut('r-model') && !lOn) h += cloudHooksBlock('r');
     if (lOn && !shut('r-model')) h += '<div class="row"><div class="body"><div class="cp-links"><a data-tab="connect">Choose model…</a></div></div></div>';
     h += head('r-output', 'Output', '<span class="path">' + esc([ex.depth || 'quick', ex.format === 'pdf' ? 'PDF' : 'HTML'].join(' · ')) + '</span>', 'sub');
     var outputOpen = !shut('r-output');
@@ -426,9 +535,27 @@ html, body { margin: 0; padding: 0; font-family: var(--vscode-font-family); font
     h += sw('save', 'Save a copy', esc(ex.folderLabel || 'Downloads') + ' · <span class="cp-links"><a data-act="pickFolder">change</a></span>');
     if (!outputOpen) h = h.slice(0, outStart);
 
-    h += '<div class="cp-cta"><div class="report-actions"><button type="button" class="btn' + (busy || !n || needModel ? ' off' : '') + '" data-act="create"' + (busy || !n || needModel ? ' disabled' : '') + '>' +
-      (busy ? 'Running report…' : n && !needModel ? (ex.depth === 'deep' ? 'Create deep report' : 'Create report') + ' · ' + n + ' project' + (n === 1 ? '' : 's') : needModel ? 'Pick a local model' : 'Pick a project') + '</button></div>' +
-      '<div class="cp-sub">' + esc(local.enabled ? (local.model || 'Local model') + ' · full report on this computer' : cloud ? cloud.project + ' per project · ' + cloud.final + ' overview' : '') + '</div></div>';
+    h += '<div class="cp-cta"><div class="report-actions"><button type="button" class="btn' + (cannotCreate ? ' off' : '') + '" data-act="create"' + (cannotCreate ? ' disabled' : '') + '>' +
+      (busy ? 'Running report…' : n ? (ex.depth === 'deep' ? 'Create deep report' : 'Create report') + ' · ' + n + ' project' + (n === 1 ? '' : 's') : 'Pick a project') + '</button></div>' +
+      '<div class="cp-sub">' + esc(local.enabled ? (local.model || 'Local model') + ' · full report on this computer' : cloudLine) + '</div>';
+    if (cloudBlocked && !cloud.loading) {
+      h += '<div class="cp-sub">' + (Array.isArray(cloud.providers) && cloud.providers.some(function (p) { return p.connected; })
+        ? 'Choose a cloud hook in Model.' : '<button type="button" class="btn sm" data-tab="connect">Connect a cloud hook</button>') + '</div>';
+    }
+    if (!lOn && !cloudBlocked && n > 0) {
+      var est = S.estimate;
+      if (est && est.summaryLine) {
+        h += '<div class="cp-sub" data-estimate="1" role="status">' + esc(est.summaryLine) + '</div>';
+      } else if (S.estimatePending) {
+        h += '<div class="cp-sub" role="status">Estimating subscription impact…</div>';
+      }
+      if (est && est.tight) {
+        var alt = est.suggestedAlternative;
+        h += '<div class="cp-lead"><span>This run could bring usage close to a subscription limit.</span>' +
+          (alt ? '<button type="button" data-cloud-switch="' + esc(alt.id) + '">Use ' + esc(alt.label || alt.id) + '</button>' : '') + '</div>';
+      }
+    }
+    h += '</div>';
 
     h += reportProgress();
 
@@ -445,7 +572,7 @@ html, body { margin: 0; padding: 0; font-family: var(--vscode-font-family); font
           '<button type="button" class="iconbtn report-manage" data-act="manage"' + ref + ' title="Manage report" aria-label="' + esc('Manage ' + label + (date ? ', ' + date : '')) + '">⋯</button></div>';
       }));
     }
-    h += '<div class="cp-note">Report sources can include Claude Code, Codex, Antigravity and Cursor. Local runs on this computer. Cloud sends redacted prompts through Claude Code.</div>';
+    h += '<div class="cp-note">Report sources can include Claude Code, Codex, Antigravity and Cursor. Local runs on this computer. Cloud sends redacted prompts through your chosen connected subscription.</div>';
     return h;
   }
 
@@ -464,10 +591,27 @@ html, body { margin: 0; padding: 0; font-family: var(--vscode-font-family); font
     var row = function (k, sub, v) { return '<div class="kv"><span class="k">' + k + '</span><span class="v">' + v + '</span><span class="sub">' + sub + '</span></div>'; };
     var h = head('c-model', 'Report model', '<span class="path">full report</span>');
     if (shut('c-model')) return h;
-    h += row('Run on', on ? 'a model on this computer' : 'Claude, through your own Claude Code', '<span class="seg"><a data-mode="cloud" class="' + (on ? '' : 'on') + '">Cloud</a><a data-mode="local" class="' + (on ? 'on' : '') + '">Local</a></span>');
+    h += row('Run on', on ? 'a model on this computer' : 'your selected CLI subscription', '<span class="seg" role="group" aria-label="Run on">' +
+      '<button type="button" data-mode="cloud" class="' + (on ? '' : 'on') + '" aria-pressed="' + !on + '">Cloud</button>' +
+      '<button type="button" data-mode="local" class="' + (on ? 'on' : '') + '" aria-pressed="' + on + '">Local</button></span>');
     if (!on) {
-      h += row('Per project', 'one worker for each project', '<span class="val">' + esc(cloud.project || 'haiku · medium') + '</span>');
-      h += row('Overview', 'writes the three monthly cards', '<span class="val">' + esc(cloud.final || 'sonnet · high') + '</span>');
+      h += cloudHooksBlock('c');
+      var providers = Array.isArray(cloud.providers) ? cloud.providers : null;
+      if (providers) {
+        var needSignIn = providers.filter(function (p) { return !p.connected && p.installed; });
+        if (needSignIn.length) {
+          h += head('c-signin', 'Other installed hooks', '<span class="path">' + needSignIn.length + '</span>', 'sub');
+          if (!shut('c-signin')) {
+            h += needSignIn.map(function (p) {
+              return '<div class="row"><div class="body"><div class="l">' + esc(p.label || p.id) + '</div>' +
+                (p.reason ? '<div class="d">' + esc(p.reason) + '</div>' : '') +
+                '</div>' + (p.canSignIn ? '<button type="button" class="btn sm" data-cloud-signin="' + esc(p.id) + '">' +
+                  (p.signInGuide ? 'Sign-in steps' : 'Sign in') + '</button>' : '') + '</div>';
+            }).join('');
+          }
+        }
+        h += '<div class="btns"><button type="button" class="btn sm" data-act="cloudScan"' + (cloud.loading ? ' disabled' : '') + '>Rescan</button></div>';
+      }
       return h;
     }
     if (!L || L.checking) return h + row('Checking local server', '', '<span class="dim" role="status">…</span>');
@@ -542,6 +686,7 @@ html, body { margin: 0; padding: 0; font-family: var(--vscode-font-family); font
       if (S.d) setTimeout(render, holdUntil - Date.now() + 20);
       return;
     }
+    requestEstimate();
     var page = S.tab === 'report' ? reportPage() : S.tab === 'connect' ? connectPage() : S.tab === 'metrics' ? metricsPage() : sessionsPage();
     var markup = '<div class="top"><div class="hdr">' + I.mark + '<div class="title"><b>Claude Report</b><span>' + esc((S.d && S.d.version) || '') + '</span></div><div class="spacer"></div>' +
       '<button class="iconbtn' + (S.spin ? ' spin' : '') + '" data-act="refresh" title="Refresh">' + I.refresh + '</button></div>' + (S.tab === 'metrics' ? sourceButtons() : '') + tabs() + '</div><div id="page">' + page + '</div>';
@@ -558,7 +703,7 @@ html, body { margin: 0; padding: 0; font-family: var(--vscode-font-family); font
       var list = app.querySelector('[data-list="' + key + '"] .hrows-list');
       if (list) list.scrollTop = scrolls[key];
     });
-    if (focused && /^(?:progress-(toggle|list|flow|cancel)|report-option-\w+(?:-\w+)?)$/.test(focused)) {
+    if (focused && (/^(?:progress-(toggle|list|flow|cancel)|report-option-\w+(?:-\w+)?)$/.test(focused) || focused.startsWith('cloud-control-'))) {
       var replacement = document.getElementById(focused);
       replacement?.focus?.();
     }
@@ -568,17 +713,86 @@ html, body { margin: 0; padding: 0; font-family: var(--vscode-font-family); font
   }
 
   var pending = function () { S.local = Object.assign({}, (S.d && S.d.localPrefs) || {}, S.local, { checking: true, error: null }); render(); };
+  var requestEstimate = function () {
+    var d = S.d;
+    var ex = d.export || {};
+    var local = S.local || d.localPrefs || {};
+    var provider = selectedCloud(d.cloud);
+    var projects = chosen();
+    var depth = ex.depth || 'quick';
+    var deepEffort = ex.deepEffort || 'medium';
+    var estimateTime = ex.estimateTime === true;
+    var canEstimate = S.tab === 'report' && !S.running && !local.enabled && !S.cloudChanging && provider && projects.length &&
+      Number.isSafeInteger(d.estimateRevision);
+    var key = canEstimate ? JSON.stringify([d.estimateRevision, d.monthLabel, d.cloud.cloudRevision, provider.id, provider.selection,
+      projects, depth, deepEffort, estimateTime]) : '';
+    if (key === S.estimateKey) return;
+    S.estimateKey = key;
+    S.estimate = null;
+    S.estimatePending = Boolean(key);
+    var requestId = ++S.estimateRequest;
+    if (key) post({ cmd: 'estimateReport', requestId: requestId, provider: provider.id, projects: projects, depth: depth, deepEffort: deepEffort, estimateTime: estimateTime });
+  };
+
+  function changeCloud(message) {
+    if (S.cloudChanging) return;
+    S.cloudChanging = true;
+    post(Object.assign(message, { changeId: ++S.cloudChange }));
+    render();
+  }
+  function pickCloudProvider(id) {
+    S.cloudOpen[id] = true;
+    persist();
+    if (id === (S.d && S.d.cloud && S.d.cloud.provider)) render();
+    else changeCloud({ cmd: 'cloudPickProvider', provider: id });
+  }
   app.addEventListener('click', function (e) {
-    var t = e.target.closest('[data-tab],[data-act],[data-proj],[data-opt],[data-fmt],[data-sid],[data-eng],[data-lm],[data-mode],[data-source],[data-thinking],[data-fold],[data-key]');
-    if (!t) return;
+    if (!e || !e.target || typeof e.target.closest !== 'function') return;
+    var expandBtn = e.target.closest('[data-cloud-expand]');
+    if (expandBtn && expandBtn.dataset && expandBtn.dataset.cloudExpand) {
+      var pid = expandBtn.dataset.cloudExpand;
+      var activeId = (S.d && S.d.cloud && S.d.cloud.provider) || 'claude';
+      var curOpen = S.cloudOpen[pid] !== undefined ? !!S.cloudOpen[pid] : activeId === pid;
+      S.cloudOpen[pid] = !curOpen;
+      persist();
+      render();
+      return;
+    }
+    var t = e.target.closest('[data-tab],[data-act],[data-proj],[data-opt],[data-fmt],[data-sid],[data-eng],[data-lm],[data-mode],[data-source],[data-thinking],[data-fold],[data-key],[data-cloud-provider],[data-cloud-role],[data-cloud-model],[data-cloud-effort],[data-cloud-signin],[data-cloud-switch]');
+    if (!t || !t.dataset) return;
     if (t.dataset.tab) { S.tab = t.dataset.tab; if (S.tab === 'connect' && (((S.d && S.d.localPrefs) || {}).enabled || (S.local && S.local.enabled))) { pending(); post({ cmd: 'localScan' }); } else { persist(); render(); } persist(); return; }
     if (t.dataset.fold) { S.closed[t.dataset.fold] = !S.closed[t.dataset.fold]; persist(); render(); return; }
     if (t.dataset.key) { S.more[t.dataset.key] = !S.more[t.dataset.key]; persist(); render(); return; }
     if (t.dataset.source) { S.metricSource = t.dataset.source; persist(); render(); return; }
+    if (t.dataset.cloudProvider) { pickCloudProvider(t.dataset.cloudProvider); return; }
+    if (t.dataset.cloudRole) {
+      S.cloudRole = t.dataset.cloudRole === 'overview' ? 'overview' : 'project';
+      persist();
+      render();
+      return;
+    }
+    if (t.dataset.cloudModel) {
+      changeCloud({ cmd: 'cloudPickModel', provider: t.dataset.provider, role: S.cloudRole, model: t.dataset.cloudModel });
+      return;
+    }
+    if (t.dataset.cloudEffort) {
+      changeCloud({ cmd: 'cloudPickEffort', provider: t.dataset.provider, role: t.dataset.role, effort: t.dataset.cloudEffort });
+      return;
+    }
+    if (t.dataset.cloudSignin) { post({ cmd: 'cloudSignIn', provider: t.dataset.cloudSignin }); return; }
+    if (t.dataset.cloudSwitch) {
+      var swId = t.dataset.cloudSwitch;
+      if (swId === 'local') {
+        S.local = { enabled: true, checking: true };
+        post({ cmd: 'localMode', mode: 'local' });
+        render();
+      } else pickCloudProvider(swId);
+      return;
+    }
     if (t.dataset.mode) {
       S.local = { enabled: t.dataset.mode === 'local', checking: true };
-      render();
       post({ cmd: 'localMode', mode: t.dataset.mode });
+      render();
       return;
     }
     if (t.dataset.thinking) { pending(); post({ cmd: 'localThinking', enabled: t.dataset.thinking === 'on' }); return; }
@@ -589,11 +803,11 @@ html, body { margin: 0; padding: 0; font-family: var(--vscode-font-family); font
       var key = t.dataset.opt;
       var output = (S.d && S.d.export) || {};
       var value = t.dataset.value || !output[key];
+      post({ cmd: 'opt', key: key, value: value });
       if (S.d && ['depth', 'deepEffort', 'estimateTime'].indexOf(key) >= 0) {
         S.d.export = Object.assign({}, output, { [key]: value });
         render();
       }
-      post({ cmd: 'opt', key: key, value: value });
       return;
     }
     if (t.dataset.fmt) { post({ cmd: 'opt', key: 'format', value: t.dataset.fmt }); return; }
@@ -610,6 +824,7 @@ html, body { margin: 0; padding: 0; font-family: var(--vscode-font-family); font
     else if (a === 'newSession') post({ cmd: 'newSession' });
     else if (a === 'sessOnly') { S.sessOnly = !S.sessOnly; persist(); render(); }
     else if (a === 'localScan') { pending(); post({ cmd: 'localScan' }); }
+    else if (a === 'cloudScan') { post({ cmd: 'cloudScan' }); }
     else if (a === 'openEngine') { S.local = Object.assign({}, S.local, { checking: true }); render(); post({ cmd: 'openEngine' }); }
     else if (a === 'pickFolder') post({ cmd: 'pickFolder' });
     else if (a === 'test') { S.test = null; post({ cmd: 'test' }); }
@@ -625,8 +840,22 @@ html, body { margin: 0; padding: 0; font-family: var(--vscode-font-family); font
 
   window.addEventListener('message', function (e) {
     var m = e.data || {};
-    if (m.type === 'state') { S.d = m.d; render(); }
+    if (m.type === 'state') {
+      S.d = m.d;
+      render();
+    }
     else if (m.type === 'local') { S.local = m.d; render(); }
+    else if (m.type === 'cloud') {
+      if (m.changeId === S.cloudChange) S.cloudChanging = false;
+      if (!S.d) S.d = {};
+      S.d.cloud = m.d;
+      render();
+    }
+    else if (m.type === 'estimate' && S.estimatePending && m.requestId === S.estimateRequest) {
+      S.estimate = m.d;
+      S.estimatePending = false;
+      render();
+    }
     else if (m.type === 'test') { S.test = { ok: m.ok, lines: m.lines || [] }; render(); }
     else if (m.type === 'tab') { S.tab = m.tab; persist(); render(); }
     else if (m.type === 'runStart') {

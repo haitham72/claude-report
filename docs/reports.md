@@ -8,11 +8,23 @@ How a monthly report is built, what is in it, and how to change what it says.
 - **Summary, Goal and Achievement** describe the period from project reports. Sustained work across multiple days takes priority, and the goal reflects the broader objective supported by activity throughout the month.
 - **Advice** is its own section after Projects, kept apart from the achievement report. It shows three tiles in Quick and Deep reports: a strength, a thing to watch and a habit to try, with where each was seen. It rests on a short note each project card writes about how you phrased your prompts (Deep uses the full project reviews). Under ten prompts it is labelled a first look. It has no scores. The **Learn more** links come from a fixed list of official Claude documentation pages chosen by topic, never from the model.
 - **Usage** shows tokens by day as stacked bars. The eight largest projects keep a colour and the rest group as **Other**. Use the project picker to focus the chart, hover, focus or click a legend entry to highlight a project, or open the data table. A line under the chart splits input, output, cache reads and cache writes.
-- **Projects** are ranked rows. Each collapsed row shows an icon, the name, a one-line summary, tokens and prompts, a share-of-tokens bar and the outcome counts. The icon is assigned from the project name. The first six show; the rest sit behind **Show more**. Expand a row for up to eight examples with details and supporting evidence, plus AI uses, friction and next steps. Each example carries a status: **Requested** (asked for, no result recorded), **Recorded** (a commit, file change or agent report records a change) or **Verified** (a test result, run or confirmation is recorded). Time appears only for examples with a recorded result. Older reports have no status, so only clear wording such as "no fix is recorded" is read as a request and marked **inferred**. Reports built with a local model mark rows **local draft**.
+- **Projects** are ranked rows. Each collapsed row shows an icon, the name, a one-line summary, tokens and prompts, a share-of-tokens bar and the outcome counts. The icon is assigned from the project name. The first five show, with the remaining projects under **Show more**. Expand a row for up to eight examples with details and supporting evidence, plus AI uses, friction and next steps. Each example carries a status: **Requested** (asked for, no result recorded), **Recorded** (a commit, file change or agent report records a change) or **Verified** (a test result, run or confirmation is recorded). Time appears only for examples with a recorded result. Older reports have no status, so only clear wording such as "no fix is recorded" is read as a request and marked **inferred**. Reports built with a local model mark rows **local draft**.
 - **Prompting** shows the cross-project synthesis, then each project's review. A finding shows the checked excerpt of your own wording, its observation and a UTC reference. The suggested rewrite and the project context note are model-written and labelled as such.
 - **Evidence** lists dated commits from available local refs, limited to commits matching the repository's configured author email, with repository names, subjects and counts. The first 20 show for each repository. If no author email is configured every commit is listed and the report says so. A commit shows when a change was recorded, not that a prompt produced it. All times are UTC. A note explains how tokens, prompts and time estimates are counted.
 
 Turn on **Report → Output → AI time estimates** to show estimated time with and without AI and the estimated savings in example cards. The setting applies to Create and Enhance. The report labels the estimates and uses any time you supply for a matching task.
+
+## Cloud hooks and models
+
+Under **Report → Model → Cloud**, choose a signed-in hook and expand it to pick the per-project and overview models and supported reasoning effort. The same picker is available under **Connect → Report model**. Claude Code, Codex, Muse, Antigravity, OpenCode, Cursor CLI and Gemini CLI are checked for eligible native sign-ins. OpenCode models must belong to a connected OAuth provider. If a CLI cannot list its models and supports running with its default, the picker shows **CLI default**.
+
+Use **Connect** to sign in through the provider where supported, then rescan. Sign-in stays with the CLI or provider. The extension requires an existing subscription login to run a cloud report.
+
+Google AI personal accounts use Antigravity. Gemini CLI requires a Gemini Code Assist Standard or Enterprise license and a configured Google Cloud project. [Google's Gemini CLI transition](https://developers.googleblog.com/an-important-update-transitioning-gemini-cli-to-antigravity-cli/)
+
+Before starting, the Report tab estimates the workload for the chosen projects, models, and report depth. For Claude Code and Codex, it can show a rough percentage range when there are enough usable local samples to match changes in a quota window to transcript token usage. Claude's windows are five hours and one week. Where a current reading is available, the estimate also projects utilization after the run. With insufficient history, the preview shows approximate tokens and requests, with current utilization if available. Muse can show current usage when its CLI exposes an allowance.
+
+Cloud reports follow the provider account's usage and billing settings. If your account allows paid overages, check the provider's account usage settings before running close to an included limit.
 
 ## Report depth
 
@@ -28,15 +40,15 @@ Turn on **Report → Output → AI time estimates** to show estimated time with 
 
 Before model requests, Deep displays message and word counts, the model's context budget, estimated input tokens, and its batching plan. It preserves wording when it fits. Larger projects are packed by session. A message larger than an entire request is sent in ordered fragments. The report runtime log records provider-measured input tokens when available. Claude Code Cloud uses a 200,000-token planning window by default, which you can set to the context of your model using claudeReport.deep.cloudContext.
 
-Each project gets one request at the selected depth whenever its evidence fits the model context. In Cloud mode, Haiku reviews projects independently, at most three at a time. Sonnet then gets the project cards and validated reviews for one final synthesis. Local mode uses the selected model for both steps and reviews projects one at a time. The cache reuses a review when its depth, evidence, and model settings match. Changing the depth builds a fresh project review with that selection. Model reasoning effort is a separate setting.
+Each project gets one request at the selected depth whenever its evidence fits the model context. In Cloud mode, the selected per-project model reviews projects independently, at most three at a time, and the overview model gets the project cards and validated reviews for one final synthesis. Local mode uses the selected model for both steps and reviews projects one at a time. The cache reuses a review when its hook, depth, evidence, and model settings match. Changing the depth builds a fresh project review with that selection. Model reasoning effort is a separate setting.
 
-A Deep run reviews at one depth and makes a fixed number of requests. The confirmation lists them: the project review requests at the chosen depth plus one final synthesis. The run refuses any request for another depth, any request that was not planned, and any request past the planned count, so a script or a bug cannot repeat the review across depths or efforts. The first confirmation for Create also states the number of project card requests.
+A Deep run reviews at one depth within a request budget. The confirmation lists the uncached project review batches and the final synthesis, and the estimate allows for splitting an oversized batch. The first confirmation for Create gives the workload for the project drafts.
 
 The reviewer looks for clear goals and constraints, logical follow-ups, depth and verification, and examples of effective wording. The app checks that each quoted excerpt exists in the prompt it cites. Findings, rewrites and timestamp references appear near the top of the report. Git evidence uses commits matching the repository's configured author email and includes staged and working-tree changes when reviewing activity through the current day.
 
 Projects with the same folder name receive distinct display labels. A stable project identifier preserves their identity across revisions.
 
-A project comes from the working directory recorded in a Claude Code or Codex transcript, grouped by the nearest local Git root. The picker requires at least one eligible user prompt in the selected dates. A repository with commits alone may be absent from the picker. Daily token totals and selected prompts are separate inputs. A saved report's chart can include activity whose prompts were unavailable or omitted from its evidence sample.
+A project comes from the working directory in a supported activity source, grouped by the nearest local Git root. The picker requires eligible user prompts in the selected dates. It shows up to five project rows before the **more** control. Daily token totals and selected prompts are separate inputs. A saved report's chart can include activity whose prompts were unavailable or omitted from its evidence sample.
 
 ## Manage a saved report
 
@@ -70,13 +82,13 @@ New reports and revisions are saved under `~/.claude-report/reports/<YYYY-MM>/ru
 | `report.html` | The page you see: one self-contained file with no external requests |
 | `report.json` | The same report as data, with a `schemaVersion`. Meant to be importable by other tools without any model |
 | `reports.json` | The per-project texts alone |
-| `report-metadata.json` | Run details such as model, timing, parent revision and original cutoff |
+| `report-metadata.json` | Run details such as cloud hook, model, workload estimate when available, timing, parent revision and original cutoff |
 | `report-evidence.json` | The private sample used for enhancement |
 | `report-history.json` | Hidden status and tracked exported copies, when present |
 
 ## The skills
 
-The instructions given to Claude are plain Markdown in `skills/`:
+The report models receive instructions from Markdown files in `skills/`.
 
 | Skill | Used for |
 | --- | --- |

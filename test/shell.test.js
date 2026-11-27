@@ -52,7 +52,7 @@ const metrics = buildMetricsData({
   days: [day(16), day(17), day(18)],
   projects: [{ name: 'web-storefront', totalTokens: 100, sessions: 1, promptCount: 5, tokens: { input: 1, output: 2, cacheRead: 90, cacheCreate: 7, turns: 3 }, daily: { [day(18)]: 100 }, dailyTurns: { [day(18)]: 3 }, tools: { Bash: { calls: 4, fails: 1 } }, models: { 'sonnet-5-5': 100 }, hours: new Array(24).fill(0), cache: { cold: 0, rebuilt: 0, afterIdle: 0, starts: 1 } }]
 });
-const state = { version: 'v0.1.2', connected: true, monthLabel: 'November 2026', models: { project: 'haiku · medium', final: 'sonnet · high' }, reports: [], live: null, metrics };
+const state = { version: 'v0.1.2', connected: true, monthLabel: 'November 2026', estimateRevision: 1, models: { project: 'haiku · medium', final: 'sonnet · high' }, reports: [], live: null, metrics };
 
 test('the shell asks the host for state, then draws four tabs and the Metrics page', () => {
   const s = boot();
@@ -482,4 +482,248 @@ test('Only the open project on Sessions is a keyboard-operable switch', () => {
   const s = boot();
   s.msg({ type: 'state', d: { ...state, openProject: 'p', sessions: [] } });
   assert.match(s.app.innerHTML, /<button[^>]*role="switch"[^>]*data-act="sessOnly"/);
+});
+
+test('Report projects collapse to max 5 with x more, toggle Show less, and persist across reload', () => {
+  const s = boot();
+  const reportProjects = Array.from({ length: 9 }, (_, i) => ({ name: 'proj' + i, prompts: 9 - i, eligible: true }));
+  s.msg({ type: 'state', d: { ...state, reportProjects } });
+  s.click({ tab: 'report' });
+  assert.match(s.app.innerHTML, /data-list="r-projects"[\s\S]*?4 more/);
+  assert.match(s.app.innerHTML, /data-key="r-projects" aria-expanded="false"/);
+  const visibleProjects = s.app.innerHTML.split('data-list="r-projects"')[1].split('class="hmore-body"')[0];
+  assert.equal([...visibleProjects.matchAll(/data-proj=/g)].length, 5);
+  s.click({ key: 'r-projects' });
+  assert.match(s.app.innerHTML, /class="hrows hrows-expanded" data-list="r-projects"/);
+  assert.match(s.app.innerHTML, /data-key="r-projects" aria-expanded="true"[\s\S]*?Show less/);
+  assert.strictEqual(s.saved.more['r-projects'], true);
+
+  const reloaded = boot(s.saved);
+  reloaded.msg({ type: 'state', d: { ...state, reportProjects } });
+  assert.match(reloaded.app.innerHTML, /class="hrows hrows-expanded" data-list="r-projects"/);
+  assert.match(reloaded.app.innerHTML, /Show less/);
+});
+
+const cloudProvidersFixture = {
+  provider: 'claude',
+  cloudRevision: 1,
+  providers: [
+    {
+      id: 'claude',
+      label: 'Claude Code',
+      installed: true,
+      connected: true,
+      planLabel: 'Max 5x',
+      headroom: '74% left',
+      supportsEffort: true,
+      efforts: ['low', 'medium', 'high'],
+      models: [
+        { id: 'haiku', label: 'Haiku', tier: 'fast', context: 200000 },
+        { id: 'sonnet', label: 'Sonnet', tier: 'balanced', context: 200000 },
+        { id: 'opus', label: 'Opus', tier: 'strong', context: 200000 }
+      ],
+      selection: {
+        project: { model: 'haiku', effort: 'medium' },
+        overview: { model: 'sonnet', effort: 'high' }
+      }
+    },
+    {
+      id: 'antigravity',
+      label: 'Antigravity',
+      installed: true,
+      connected: true,
+      planLabel: 'Pro',
+      headroom: '88% left',
+      supportsEffort: true,
+      efforts: ['low', 'medium', 'high'],
+      models: Array.from({ length: 8 }, (_, i) => ({ id: 'ag-model-' + i, label: 'AG Model ' + i, tier: 'balanced', context: 200000,
+        ...(i === 1 ? { efforts: ['low', 'high'], defaultEffort: 'low' } : i === 2 ? { efforts: [] } : {}) })),
+      selection: {
+        project: { model: 'ag-model-0', effort: 'medium' },
+        overview: { model: 'ag-model-1', effort: 'high' }
+      }
+    },
+    {
+      id: 'codex',
+      label: 'Codex',
+      installed: true,
+      connected: false,
+      canSignIn: true,
+      reason: 'Not signed in to Codex'
+    },
+    {
+      id: 'gemini',
+      label: 'Gemini CLI',
+      installed: true,
+      connected: false,
+      canSignIn: false,
+      reason: 'Use the CLI to sign in'
+    },
+    {
+      id: 'opencode',
+      label: 'OpenCode',
+      installed: true,
+      connected: false,
+      canSignIn: true,
+      signInGuide: true
+    }
+  ]
+};
+
+test('Expandable cloud hooks list connected subscriptions, fold >5 models, switch roles, and pick models and effort', () => {
+  const s = boot();
+  const reportProjects = [{ id: 'p1', name: 'proj1', prompts: 5, eligible: true }];
+  s.msg({ type: 'state', d: { ...state, reportProjects, cloud: structuredClone(cloudProvidersFixture) } });
+  s.click({ tab: 'report' });
+
+  const h0 = s.app.innerHTML;
+  assert.match(h0, /data-cloud-provider="claude"[\s\S]*Claude Code[\s\S]*Max 5x[\s\S]*74% left/);
+  assert.match(h0, /data-cloud-provider="antigravity"[\s\S]*Antigravity[\s\S]*Pro[\s\S]*88% left/);
+  assert.doesNotMatch(h0, /data-cloud-model="ag-model-0"/, 'unselected provider drawer starts collapsed');
+
+  // Clicking expand chevron opens Antigravity without changing selected provider.
+  s.click({ cloudExpand: 'antigravity' });
+  assert.ok(!s.sent.some((m) => m.cmd === 'cloudPickProvider'));
+  assert.match(s.app.innerHTML, /data-list="r-cm-antigravity"[\s\S]*?3 more/, '8 models fold at max 5 with 3 more');
+  s.click({ key: 'r-cm-antigravity' });
+  assert.match(s.app.innerHTML, /class="hrows hrows-expanded" data-list="r-cm-antigravity"/);
+
+  // Clicking provider row selects it and opens its drawer.
+  s.click({ cloudProvider: 'antigravity' });
+  const change = s.sent.at(-1);
+  assert.equal(change.cmd, 'cloudPickProvider');
+  assert.equal(change.provider, 'antigravity');
+  const ag = { ...structuredClone(cloudProvidersFixture), provider: 'antigravity' };
+  s.msg({ type: 'cloud', d: ag, changeId: change.changeId });
+  assert.equal(s.sent.at(-1).provider, 'antigravity');
+  assert.equal(s.sent.at(-1).cmd, 'estimateReport');
+  assert.match(s.app.innerHTML, /data-cloud-effort="medium" data-provider="antigravity" data-role="project"/);
+
+  // Role switcher switches between Per project and Overview, updating selected radio and effort.
+  s.click({ cloudRole: 'overview' });
+  assert.strictEqual(s.saved.cloudRole, 'overview');
+  assert.match(s.app.innerHTML, /data-cloud-role="overview" class="on" aria-pressed="true"/);
+  assert.match(s.app.innerHTML, /aria-pressed="true" data-cloud-model="ag-model-1" data-provider="antigravity"/);
+  assert.doesNotMatch(s.app.innerHTML, /data-cloud-effort="medium" data-provider="antigravity"/);
+
+  s.click({ cloudEffort: 'low', provider: 'antigravity', role: 'overview' });
+  const effortChange = s.sent.at(-1);
+  assert.deepStrictEqual(effortChange, { cmd: 'cloudPickEffort', provider: 'antigravity', role: 'overview', effort: 'low', changeId: 2 });
+  ag.providers[1].selection.overview.effort = 'low';
+  s.msg({ type: 'cloud', d: ag, changeId: effortChange.changeId });
+
+  s.click({ cloudModel: 'ag-model-2', provider: 'antigravity' });
+  const modelChange = s.sent.at(-1);
+  assert.deepStrictEqual(modelChange, { cmd: 'cloudPickModel', provider: 'antigravity', role: 'overview', model: 'ag-model-2', changeId: 3 });
+  ag.providers[1].selection.overview = { model: 'ag-model-2', effort: '' };
+  s.msg({ type: 'cloud', d: ag, changeId: modelChange.changeId });
+  assert.doesNotMatch(s.app.innerHTML, /data-cloud-effort="[^\"]*" data-provider="antigravity"/);
+});
+
+test('Connect tab shows signed-out installed hooks with Sign in button and never renders API-key prompts', () => {
+  const s = boot();
+  s.msg({ type: 'state', d: { ...state, localPrefs: { enabled: false }, cloud: structuredClone(cloudProvidersFixture) } });
+  s.click({ tab: 'connect' });
+  const h = s.app.innerHTML;
+  assert.match(h, /Other installed hooks/);
+  assert.match(h, /Not signed in to Codex/);
+  assert.match(h, /data-cloud-signin="codex">Sign in<\/button>/);
+  assert.match(h, /Gemini CLI[\s\S]*Use the CLI to sign in/);
+  assert.doesNotMatch(h, /data-cloud-signin="gemini"/);
+  assert.match(h, /data-cloud-signin="opencode">Sign-in steps<\/button>/);
+  assert.match(h, /data-act="cloudScan">Rescan<\/button>/);
+  assert.doesNotMatch(h, /<input/i, 'never render API-key input');
+  assert.doesNotMatch(h, /api[- ]?key/i, 'never mention asking for an API key');
+
+  s.click({ cloudSignin: 'codex' });
+  assert.deepStrictEqual(s.sent.at(-1), { cmd: 'cloudSignIn', provider: 'codex' });
+  s.click({ act: 'cloudScan' });
+  assert.deepStrictEqual(s.sent.at(-1), { cmd: 'cloudScan' });
+});
+
+test('Report tab shows live subscription % impact strip without currency and lets user switch on tight headroom', () => {
+  const s = boot();
+  const reportProjects = [{ id: 'p1', name: 'proj1', prompts: 10, eligible: true }];
+  const tightEstimate = {
+    summaryLine: 'Est. ~18% of 5h Claude Code window (54% -> 72%)',
+    tight: true,
+    suggestedAlternative: { id: 'antigravity', label: 'Antigravity' }
+  };
+  s.msg({ type: 'state', d: { ...state, reportProjects, cloud: structuredClone(cloudProvidersFixture) } });
+  s.click({ tab: 'report' });
+  const request = s.sent.at(-1);
+  assert.equal(request.cmd, 'estimateReport');
+  s.msg({ type: 'estimate', requestId: request.requestId, d: tightEstimate });
+  const h = s.app.innerHTML;
+  assert.match(h, /data-estimate="1" role="status">Est\. ~18% of 5h Claude Code window/);
+  assert.doesNotMatch(h, /\$|USD/i);
+  assert.match(h, /This run could bring usage close to a subscription limit\./);
+  assert.match(h, /data-cloud-switch="antigravity">Use Antigravity<\/button>/);
+
+  s.click({ cloudSwitch: 'antigravity' });
+  const change = s.sent.at(-1);
+  assert.equal(change.cmd, 'cloudPickProvider');
+  assert.equal(change.provider, 'antigravity');
+  assert.doesNotMatch(s.app.innerHTML, /data-estimate="1"/);
+  assert.match(s.app.innerHTML, /data-act="create" disabled/);
+  s.msg({ type: 'cloud', d: { ...structuredClone(cloudProvidersFixture), provider: 'antigravity' }, changeId: change.changeId });
+
+  // Updating estimate via message switches to local suggestion and switches to local mode.
+  s.msg({ type: 'estimate', requestId: s.sent.at(-1).requestId, d: { summaryLine: 'Est. ~35% of 5h Antigravity window', tight: true, suggestedAlternative: { id: 'local', label: 'Local' } } });
+  assert.match(s.app.innerHTML, /data-cloud-switch="local">Use Local<\/button>/);
+  s.click({ cloudSwitch: 'local' });
+  assert.deepStrictEqual(s.sent.at(-1), { cmd: 'localMode', mode: 'local' });
+  assert.doesNotMatch(s.app.innerHTML, /data-estimate="1"/, 'local mode hides cloud impact strip');
+
+  s.click({ mode: 'cloud' });
+  assert.equal(s.sent.at(-1).cmd, 'estimateReport');
+  assert.doesNotMatch(s.app.innerHTML, /data-estimate="1"/, 'returning to Cloud requests a new estimate');
+});
+
+test('Report estimates follow the selection and reject stale estimate replies', () => {
+  const s = boot({ tab: 'report' });
+  const d = { ...state, estimateRevision: 1, cloud: structuredClone(cloudProvidersFixture), reportProjects: [
+    { id: 'p1', name: 'one', prompts: 10, eligible: true }, { id: 'p2', name: 'two', prompts: 12, eligible: true }
+  ] };
+  s.msg({ type: 'state', d });
+  const first = s.sent.at(-1);
+  assert.deepEqual(first.projects, ['p1', 'p2']);
+
+  s.click({ proj: 'p2' });
+  const second = s.sent.at(-1);
+  assert.deepEqual(second.projects, ['p1']);
+  s.msg({ type: 'estimate', requestId: second.requestId, d: { summaryLine: 'Estimate for one' } });
+  s.msg({ type: 'estimate', requestId: first.requestId, d: { summaryLine: 'Estimate for both' } });
+  assert.match(s.app.innerHTML, /Estimate for one/);
+  assert.doesNotMatch(s.app.innerHTML, /Estimate for both/);
+
+  s.msg({ type: 'state', d: { ...d, connected: false } });
+  assert.equal(s.sent.at(-1).requestId, second.requestId);
+  s.click({ opt: 'estimateTime' });
+  const time = s.sent.at(-1);
+  assert.equal(time.estimateTime, true);
+  assert.deepEqual(time.projects, ['p1']);
+  assert.doesNotMatch(s.app.innerHTML, /Estimate for one/);
+
+  // A changed date range arrives before its project scan. The old request is ignored.
+  s.msg({ type: 'state', d: { ...d, monthLabel: 'Custom dates', reportProjects: undefined } });
+  s.msg({ type: 'estimate', requestId: time.requestId, d: { summaryLine: 'Estimate for old range' } });
+  assert.doesNotMatch(s.app.innerHTML, /Estimate for old range/);
+  s.msg({ type: 'state', d: { ...d, monthLabel: 'Custom dates', estimateRevision: null } });
+  assert.equal(s.sent.at(-1).requestId, time.requestId, 'cached projects do not trigger estimates');
+  s.msg({ type: 'state', d: { ...d, monthLabel: 'Custom dates', estimateRevision: 2 } });
+  assert.deepEqual(s.sent.at(-1).projects, ['p1']);
+  assert.notEqual(s.sent.at(-1).requestId, time.requestId);
+});
+
+test('Report waits for a verified cloud hook before estimating or enabling Create', () => {
+  const s = boot({ tab: 'report' });
+  s.msg({ type: 'state', d: { ...state, reportProjects: [{ id: 'p1', prompts: 3, eligible: true }], cloud: { loading: true, providers: [] } } });
+  assert.match(s.app.innerHTML, /Checking for signed-in cloud hooks…/);
+  assert.match(s.app.innerHTML, /data-act="create" disabled/);
+  assert.equal(s.sent.length, 1);
+  s.msg({ type: 'cloud', d: { provider: 'claude', providers: [] } });
+  assert.match(s.app.innerHTML, /No signed-in cloud hook found/);
+  assert.match(s.app.innerHTML, /Connect a cloud hook/);
+  assert.equal(s.sent.length, 1);
 });

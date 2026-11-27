@@ -1,4 +1,5 @@
 out/**
+output/**
 dist/**
 .desktop-main-stage/**
 test/**

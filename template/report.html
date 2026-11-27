@@ -166,7 +166,7 @@ section.block{margin-top:18px}
   var projectKey = function (p) { return p.id || p.name; };
 
   // Projects are ranked by tokens. The first eight own a colour, the rest share one neutral colour.
-  var TOP = 8, LIMIT = 6;
+  var TOP = 8, LIMIT = 6, PROJECT_LIMIT = 5;
   var P = arr(D.projects).slice().sort(function (a, b) { return (b.tokens || 0) - (a.tokens || 0); });
   P.forEach(function (p, i) { p._c = i < TOP ? 'var(--c' + i + ')' : 'var(--other)'; });
   var pc = function (p) { return 'style="--pc:' + p._c + '"'; };
@@ -339,8 +339,8 @@ section.block{margin-top:18px}
     html += '<section class="block" id="projects"><div class="title"><h2>Projects</h2>' + (reported.length > 1 ? '<button type="button" class="expand" id="tgl" aria-expanded="false">Expand all</button>' : '') + '</div>' +
       '<p class="key">' + (classified ? 'Requested: asked for, no result recorded. Recorded: a change was recorded. Verified: a check or confirmation was recorded.' : 'Outcome status was not recorded for this report.') +
       (counted ? ' Estimated time saved: about ' + hrs(saved) + ' across ' + plural(counted, 'example') + (classified ? ', excluding requests with no result.' : '.') : '') + '</p><div class="rows">' +
-      rowHtml.slice(0, LIMIT).join('') + '</div>' +
-      (rowHtml.length > LIMIT ? '<details class="rest"><summary class="link card">Show ' + (rowHtml.length - LIMIT) + ' more projects</summary><div class="rows">' + rowHtml.slice(LIMIT).join('') + '</div></details>' : '') + '</section>';
+      rowHtml.slice(0, PROJECT_LIMIT).join('') + '</div>' +
+      (rowHtml.length > PROJECT_LIMIT ? '<details class="rest"><summary class="link card">Show ' + (rowHtml.length - PROJECT_LIMIT) + ' more projects</summary><div class="rows">' + rowHtml.slice(PROJECT_LIMIT).join('') + '</div></details>' : '') + '</section>';
   }
 
   // Advice

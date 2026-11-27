@@ -292,5 +292,5 @@ async function generateReports({
   return { reports: results, failed, failures, usedFinalizer };
 }
 
-module.exports = { LIMITS, sliceProject, buildProjectPrompt, buildFinalPrompt, parseReport, parseReportList, generateReports, expandedProjectWords,
+module.exports = { LIMITS, sliceProject, buildProjectPrompt, buildFinalPrompt, parseReport, parseReportList, generateReports, expandedProjectWords, detailTarget,
   parseJsonObject: (text) => extractJson(text, '{') };

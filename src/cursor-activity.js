@@ -87,7 +87,7 @@ function scanCursor(from, to, file = defaultFile(), options = {}) {
       const model = typeof c.model === 'string' ? c.model : '';
       const fallback = list.map((b) => uriToPath(b.w)).find(Boolean);
       const cwd = uriToPath(c.fs) || uriToPath(c.ext) || uriToPath(c.repo) || fallback || '';
-      if (!cwd) continue;
+      if (!cwd || /claude-report-work|ide-companio-work/i.test(cwd)) continue;
       if (!names.has(cwd)) {
         const root = gitRootOf(cwd);
         const location = root || cwd;

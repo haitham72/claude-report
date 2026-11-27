@@ -9,29 +9,46 @@ const path = require('node:path');
 const test = require('node:test');
 const { listReports, loadRun, saveRun } = require('../src/report-store');
 
-function loadHost(vscode, home, runClaude, workerResult = () => ({ projects: [] }), overrides = {}) {
+function loadHost(vscode, home, runModel, workerResult = () => ({ projects: [] }), overrides = {}) {
   const file = require.resolve('../extension');
   delete require.cache[file];
   const load = Module._load;
   const previousHome = process.env.CLAUDE_REPORT_HOME;
   const previousConfig = process.env.CLAUDE_CONFIG_DIR;
+  const realCloud = require('../src/cloud-providers');
+  const { cloudScanResult, ...moduleOverrides } = overrides;
+  const defaultCloudScan = {
+    providers: [{ id: 'claude', label: 'Claude Code', installed: true, connected: true, status: 'connected', planLabel: 'Pro', reason: '', supportsEffort: true, efforts: ['low', 'medium', 'high', 'xhigh', 'max'] }],
+    modelsByProvider: { claude: [{ id: 'haiku', label: 'Haiku', tier: 'fast' }, { id: 'sonnet', label: 'Sonnet', tier: 'balanced' }, { id: 'opus', label: 'Opus', tier: 'strong' }] },
+    calibrations: {},
+    liveQuotas: {}
+  };
   const inputs = {
     vscode,
     os: { ...os, homedir: () => home },
     worker_threads: { Worker: class extends EventEmitter {
-      constructor(_file, { workerData }) {
+      constructor(workerFile, { workerData }) {
         super();
-        queueMicrotask(() => this.emit('message', workerResult(workerData)));
+        const result = path.basename(workerFile) === 'cloud-scan-worker.js'
+          ? (cloudScanResult ? cloudScanResult(workerData) : defaultCloudScan)
+          : workerResult(workerData, workerFile);
+        queueMicrotask(() => this.emit('message', result));
       }
     } },
-    './src/claude': { ...require('../src/claude'), runClaude },
+    './src/cloud-providers': {
+      ...realCloud,
+      detectProvider: () => null,
+      detectCloudProviders: () => [],
+      discoverProviderModels: () => [],
+      runCloudProvider: runModel
+    },
     './src/install': { ...require('../src/install'), migrateLegacy() {} },
     './src/live': { readLive: () => null, readHistory: () => [] },
     './src/sessions': { listSessions: () => [] },
     './src/transcript-live': { readTranscriptLive: () => null },
     // The real poll would read this machine's Claude Code login and call Anthropic.
     './src/plan-usage': { getUsage: (cb) => cb(null, 'disabled', { route: 'disabled' }), lastUsageRoute: () => 'disabled' },
-    ...overrides,
+    ...moduleOverrides,
   };
   process.env.CLAUDE_REPORT_HOME = home;
   process.env.CLAUDE_CONFIG_DIR = path.join(home, '.claude');
@@ -95,6 +112,7 @@ test('the sidebar Manage action edits, compares, and enhances a selected saved p
         assert.equal(message, 'Enhance this saved report?');
         assert.match(detail, /[0-9]+ projects?/);
         assert.match(detail, /through your Claude Code/);
+        assert.match(detail, /token/i);
         return action;
       },
       showWarningMessage() {},
@@ -172,7 +190,7 @@ test('the sidebar Manage action edits, compares, and enhances a selected saved p
   assert.equal(documents[1].projects[0].report.summary, 'My edited summary');
   assert.deepEqual(commands[0].slice(0, 3), ['vscode.diff', 1, 2]);
 
-  await manage(edited, 'Enhance report', 'Selected projects', ['Alpha'], 'Cloud', 'sonnet', 'high');
+  await manage(edited, 'Enhance report', 'Selected projects', ['Alpha'], 'Claude Code', 'Sonnet', 'high');
   assert.equal(requests.length, 1);
   assert.equal(requests[0].label, 'Alpha');
   assert.equal(requests[0].model, 'sonnet');
@@ -241,7 +259,14 @@ function openSidebar(t, overrides = {}) {
   const start = () => {
     const host = loadHost(vscode, home, async () => '', undefined, {
       worker_threads: { Worker: class extends EventEmitter {
-        constructor() { super(); scanHeld.then(() => this.emit('message', { projects: [] })); }
+        constructor(workerFile) {
+          super();
+          if (path.basename(workerFile) === 'cloud-scan-worker.js') {
+            queueMicrotask(() => this.emit('message', { providers: [], modelsByProvider: {}, calibrations: {}, liveQuotas: {} }));
+          } else {
+            scanHeld.then(() => this.emit('message', { projects: [] }));
+          }
+        }
       } },
       ...overrides,
     });
@@ -335,4 +360,139 @@ test('a scan cache older than two days is ignored', async (t) => {
   assert.equal(side.states()[0].metrics, undefined);
   side.openScan();
   await first;
+});
+
+test('creating a report with a non-Claude cloud hook (codex) routes through runCloudProvider, shows subscription % without money, and records metadata', async (t) => {
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), 'report-host-codex-'));
+  t.after(() => fs.rmSync(home, { recursive: true }));
+  const date = new Date().toISOString();
+  const projects = [{
+    id: 'alpha',
+    name: 'Alpha',
+    baseName: 'Alpha',
+    promptCount: 3,
+    totalTokens: 1200,
+    sessions: 1,
+    daily: {},
+    prompts: [
+      { at: date, text: 'Refactor the parser module and add unit tests.' },
+      { at: date, text: 'Fix edge case when the stream is empty.' },
+      { at: date, text: 'Run the full suite to verify all checks pass.' }
+    ]
+  }];
+
+  let provider, receive, disposeView;
+  const posts = [], modals = [], cloudRequests = [], terminals = [], errors = [];
+  const vscode = {
+    window: {
+      createStatusBarItem: () => ({ show() {}, hide() {} }),
+      registerWebviewViewProvider: (_, value) => { provider = value; },
+      createTerminal: (options) => { terminals.push(options); return { show() {} }; },
+      async showInformationMessage(message, opts, action) {
+        modals.push({ message, detail: opts?.detail });
+        if (/^Create the /.test(message)) return action;
+        return action;
+      },
+      showWarningMessage() {},
+      showErrorMessage: (m) => errors.push(m)
+    },
+    commands: { registerCommand() {}, async executeCommand() {} },
+    workspace: { getConfiguration: () => ({ get: (k) => (k === 'export.save' ? false : undefined) }) },
+    StatusBarAlignment: { Left: 1, Right: 2 },
+    ThemeColor: class {}
+  };
+
+  let codexConnected = true;
+  const host = loadHost(vscode, home, async (req) => {
+    cloudRequests.push(req);
+    if (req.kind === 'overview') {
+      return JSON.stringify({ summary: 'Codex overview.', goal: 'Ship clean parser.', achievement: 'Added parser tests.' });
+    }
+    return JSON.stringify({ summary: 'Codex project summary.', examples: [{ task: 'Refactor parser', basis: 'Unit tests' }] });
+  }, (input) => {
+    if (input.git) return {};
+    return { projects };
+  }, {
+    cloudScanResult: () => ({
+      providers: [
+        { id: 'claude', label: 'Claude Code', installed: true, connected: false, status: 'signed-out', planLabel: '', reason: 'Not signed in', supportsEffort: true, efforts: ['low', 'medium', 'high', 'xhigh', 'max'] },
+        { id: 'codex', label: 'Codex', installed: true, connected: codexConnected, status: codexConnected ? 'connected' : 'signed-out', planLabel: 'ChatGPT Plus', reason: '', supportsEffort: true, efforts: ['low', 'medium', 'high'],
+          loginLaunch: { command: 'codex', args: ['login'] } }
+      ],
+      modelsByProvider: {
+        codex: [
+          { id: 'gpt-5.4-mini', label: 'gpt-5.4-mini', tier: 'fast' },
+          { id: 'gpt-5.4', label: 'gpt-5.4', tier: 'balanced' }
+        ]
+      },
+      calibrations: {
+        codex: {
+          source: 'calibrated',
+          fiveHour: { median: 70000, p25: 40000, p75: 105000, count: 4 },
+          sevenDay: { median: 650000, p25: 400000, p75: 1000000, count: 3 }
+        }
+      },
+      liveQuotas: {
+        codex: {
+          fiveHour: { pct: 10, resetsAt: Date.now() / 1000 + 3600, seenAt: Date.now() },
+          sevenDay: { pct: 25, resetsAt: Date.now() / 1000 + 86400, seenAt: Date.now() }
+        }
+      }
+    })
+  });
+
+  host.activate({ subscriptions: [] });
+  provider.resolveWebviewView({
+    webview: { onDidReceiveMessage(fn) { receive = fn; }, postMessage: (m) => posts.push(m) },
+    onDidChangeVisibility() {}, onDidDispose(fn) { disposeView = fn; }
+  });
+  t.after(() => { disposeView(); host.deactivate(); });
+
+  await receive({ cmd: 'ready' });
+  await receive({ cmd: 'cloudScan' });
+  await receive({ cmd: 'cloudPickProvider', provider: 'codex' });
+  await receive({ cmd: 'cloudPickModel', provider: 'codex', role: 'project', model: 'gpt-5.4-mini', changeId: 9 });
+  assert.equal(posts.at(-1).changeId, 9);
+  await receive({ cmd: 'cloudPickModel', provider: 'codex', role: 'project', model: 'undiscovered', changeId: 10 });
+  assert.equal(posts.at(-1).d.models.project.model, 'gpt-5.4-mini');
+  await receive({ cmd: 'cloudPickEffort', provider: 'codex', role: 'overview', effort: 'high' });
+  await receive({ cmd: 'cloudSignIn', provider: 'codex' });
+  assert.equal(terminals.length, 0);
+
+  await receive({ cmd: 'estimateReport', provider: 'codex', projects: ['alpha'], requestId: 11 });
+  assert.equal(posts.at(-1).requestId, 11);
+  assert.equal(posts.at(-1).d.requests, 2);
+  await receive({ cmd: 'estimateReport', provider: 'codex', projects: [], requestId: 12 });
+  assert.deepEqual(posts.at(-1), { type: 'estimate', requestId: 12, d: null });
+
+  await receive({ cmd: 'create', projects: ['alpha'] });
+  assert.deepEqual(errors, []);
+  assert.equal(cloudRequests.length, 2);
+  assert.ok(cloudRequests.every((r) => r.provider === 'codex'));
+  assert.equal(cloudRequests[0].model, 'gpt-5.4-mini');
+
+  const createModal = modals.find((m) => /^Create the /.test(m.message));
+  assert.ok(createModal, 'confirmation modal shown');
+  assert.match(createModal.message, /with Codex\?/);
+  assert.match(createModal.detail, /through your Codex\./);
+  assert.match(createModal.detail, /5-hour/i);
+  assert.match(createModal.detail, /%/);
+  assert.doesNotMatch(createModal.detail, /\$|USD/i);
+
+  const saved = listReports(home);
+  assert.equal(saved.length, 1);
+  const run = loadRun(home, saved[0].month, saved[0].run);
+  assert.equal(run.metadata.provider, 'cloud');
+  assert.equal(run.metadata.cloudProvider, 'codex');
+  assert.equal(run.metadata.planLabel, 'ChatGPT Plus');
+  assert.ok(run.metadata.estimatedQuota);
+  assert.equal(run.metadata.estimatedQuota.confidence, 'calibrated');
+  codexConnected = false;
+  await receive({ cmd: 'cloudScan' });
+  await receive({ cmd: 'cloudSignIn', provider: 'codex' });
+  assert.equal(terminals[0].shellPath, 'codex');
+  assert.deepEqual(terminals[0].shellArgs, ['login']);
+  await receive({ cmd: 'create', projects: ['alpha'] });
+  assert.match(errors.at(-1), /Connect Codex/);
+  assert.equal(cloudRequests.length, 2, 'a signed-out hook cannot dispatch a request');
 });

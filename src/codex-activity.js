@@ -92,7 +92,7 @@ function activityFromSession(file, from, to, names, { identifyProjects, deep, th
     }
     const event = record.type === 'event_msg';
     const response = record.type === 'response_item' && payload.type === 'message' && payload.role === 'user';
-    if ((!event && !response) || !cwd) continue;
+    if ((!event && !response) || !cwd || /claude-report-work|ide-companio-work/i.test(cwd)) continue;
     const at = new Date(record.timestamp);
     if (!Number.isFinite(+at) || at >= to) continue;
 

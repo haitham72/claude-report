@@ -201,7 +201,7 @@ test('busy reports list a few projects first and open everything for print', () 
   const projects = Array.from({ length: 9 }, (_, i) => ({ name: 'P' + i, tokens: 100 - i, report: report([example({ status: 'recorded' })]) }));
   const opened = [{ open: false }, { open: false }];
   const { app } = mount({ days: [], projects }, { hash: '#print', details: opened });
-  assert.match(app.innerHTML, /Show 3 more projects/);
+  assert.match(app.innerHTML, /Show 4 more projects/);
   assert.match(app.innerHTML, /id="tgl"/);
   assert.deepEqual(opened.map((item) => item.open), [true, true]);
   assert.equal(mount({ days: [], projects: [projects[0]] }).app.innerHTML.includes('id="tgl"'), false);

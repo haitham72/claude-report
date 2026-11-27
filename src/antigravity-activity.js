@@ -104,7 +104,7 @@ function scanAntigravity(from, to, root = path.join(process.env.ANTIGRAVITY_HOME
       const userIn = userAt && userAt >= from && userAt < to;
       if (!modifiedIn && !userIn) continue;
       const cwd = workspacePath(row.workspace_uris);
-      if (!cwd) continue;
+      if (!cwd || /claude-report-work|ide-companio-work/i.test(cwd)) continue;
       if (!names.has(cwd)) {
         const gitRoot = gitRootOf(cwd);
         const location = gitRoot || cwd;

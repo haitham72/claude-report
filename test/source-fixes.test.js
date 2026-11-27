@@ -117,3 +117,48 @@ test('antigravity: null step index -> latest prompt; window filter in SQL', { sk
   assert.strictEqual(p.sessions, 1);
   assert.strictEqual(p.prompts[0].text, 'latest prompt');
 });
+
+test('codex: ignores sessions whose cwd contains claude-report-work', () => {
+  const root = path.join(home, 'codex-ignore', '2026', '03', '10');
+  fs.mkdirSync(root, { recursive: true });
+  const workCwd = path.join(home, 'claude-report-work');
+  fs.writeFileSync(path.join(root, 'rollout-2026-03-10T09-00-00-bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb.jsonl'), jl(
+    { type: 'session_meta', timestamp: '2026-03-10T09:00:00.000Z', payload: { cwd: workCwd } },
+    { type: 'event_msg', timestamp: '2026-03-10T09:01:00.000Z', payload: { type: 'user_message', message: 'internal report prompt' } },
+    { type: 'event_msg', timestamp: '2026-03-10T09:02:00.000Z', payload: {
+      type: 'token_count',
+      info: { total_token_usage: { input_tokens: 500, output_tokens: 50 }, last_token_usage: { input_tokens: 500, output_tokens: 50 } }
+    } }
+  ));
+  assert.deepStrictEqual(scanCodex(from, to, path.join(home, 'codex-ignore')), []);
+});
+
+test('cursor: ignores composers whose workspace path contains claude-report-work', { skip }, () => {
+  const file = path.join(home, 'state-ignore.vscdb');
+  const db = new sqlite.DatabaseSync(file);
+  db.exec('CREATE TABLE cursorDiskKV (key TEXT, value BLOB)');
+  const put = (k, v) => db.prepare('INSERT INTO cursorDiskKV VALUES (?, CAST(? AS BLOB))').run(k, JSON.stringify(v));
+  const workCwd = path.join(home, 'claude-report-work');
+  put('composerData:c-work', { workspaceIdentifier: { uri: { fsPath: workCwd } } });
+  put('bubbleId:c-work:a', { type: 1, createdAt: '2026-03-10T08:00:00.000Z', text: 'internal prompt' });
+  put('bubbleId:c-work:b', { type: 2, createdAt: '2026-03-10T08:01:00.000Z', tokenCount: { inputTokens: 100, outputTokens: 20 } });
+  db.close();
+  assert.deepStrictEqual(scanCursor(from, to, file), []);
+});
+
+test('antigravity: ignores conversations whose workspace path contains claude-report-work', { skip }, () => {
+  const root = path.join(home, 'agy-ignore');
+  fs.mkdirSync(root, { recursive: true });
+  const db = new sqlite.DatabaseSync(path.join(root, 'conversation_summaries.db'));
+  db.exec(`CREATE TABLE conversation_summaries (conversation_id TEXT, title TEXT, preview TEXT, step_count INTEGER,
+    last_modified_time TEXT, workspace_uris TEXT, agent_name TEXT, parent_conversation_id TEXT, nesting_depth INTEGER,
+    last_user_input_time TEXT, last_user_input_step_index INTEGER)`);
+  db.exec('CREATE TABLE conversations_fts (conversation_id TEXT, chunk_index INTEGER, user_body TEXT, user_step_byte_offsets BLOB)');
+  const workWs = JSON.stringify([pathToFileURL(path.join(home, 'claude-report-work')).href]);
+  db.prepare('INSERT INTO conversation_summaries VALUES (?,?,?,?,?,?,?,?,?,?,?)').run(
+    'c-work', 't', 'prev', 3, '2026-03-10 09:00:05.000+00:00', workWs, '', '', 0, '2026-03-10 08:59:00.000+00:00', 0
+  );
+  db.prepare('INSERT INTO conversations_fts VALUES (?,?,?,?)').run('c-work', 0, 'internal prompt', JSON.stringify([[0, 0]]));
+  db.close();
+  assert.deepStrictEqual(scanAntigravity(from, to, root), []);
+});

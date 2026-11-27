@@ -10,9 +10,9 @@ Claude Report is plain Node with no runtime dependencies and no bundler. This pa
 | Metrics, daily chart | Claude Code JSONL transcripts and Codex rollouts. Supported token counts, user prompts, models and tool data come from timestamped records |
 | Model and context in the status bar | The newest transcript for the open folder: the last assistant turn's model and its prompt size over a 200k window (1M once a turn exceeds it). This is a heuristic |
 | 5h and 7d usage | Several routes, newest wins: OAuth plan-usage poll (`src/plan-usage.js`, same as `/usage`), shared temp cache, and the status-line hook (`bin/hook.js`). `src/live.js` keeps timestamped samples and resets for the Metrics charts |
-| Report text | Your own `claude` command, or a local model |
+| Report text | The selected CLI subscription or local model |
 
-Scanning and rendering use local files. Cloud generation delegates to the signed-in Claude Code CLI. Local generation sends requests to the selected localhost model server.
+Scanning and rendering use local files. Cloud generation delegates to the selected, signed-in CLI. Local generation sends requests to the selected localhost model server.
 
 ## Plan usage routes
 
@@ -60,7 +60,7 @@ flowchart LR
 flowchart TD
   A[scan the selected dates] --> B[you pick projects]
   B --> C["per project: skill + that project's redacted prompts"]
-  C -->|Cloud| D["claude -p, Haiku, medium"]
+  C -->|Cloud| D["Selected signed-in CLI and project model"]
   C -->|Local| E["LM Studio or Ollama, JSON schema"]
   D --> F[project cards]
   E --> F
@@ -73,8 +73,9 @@ flowchart TD
 ```
 
 - The scan runs in a worker thread so the editor stays responsive.
-- Cloud project cards use up to three workers. Cloud Deep runs the Haiku project reviews three at a time inside a request budget, then sends their findings and the project cards to Sonnet. Local project requests run one at a time. Each project shows `queued`, `gathering`, `working` and `done` or `failed` in the sidebar.
-- `claude -p` is started in a temporary folder with `--no-session-persistence`, so report runs leave no transcripts behind and the next scan cannot count them.
+- Cloud project cards and reviews use up to three workers. The overview model receives the cards and, for Deep, the validated project findings. Local project requests run one at a time. Each project shows `queued`, `gathering`, `working` and `done` or `failed` in the sidebar.
+- Cloud CLIs run in a dedicated temporary workspace with temporary or ephemeral session flags where provided. The activity scan skips report workspace sessions.
+- The cloud discovery worker checks eligible CLI sign-ins, models and available quota readings. Subscription estimates use the report workload and, where supported, recent local measurements for the user's quota windows.
 - Project names come from the Git root of the session's folder. A session started in your home folder is called `home`. If the folder has no Git root, its own name is used. A Git commit is supplementary evidence for an eligible project.
 
 ## Layout of the code
@@ -88,6 +89,7 @@ flowchart TD
 | `src/scan.js`, `src/codex-activity.js`, `src/scan-worker.js` | Transcript scan, project attribution, redaction and environment-file filtering |
 | `src/sessions.js`, `resume.js` | Session list and where to resume one |
 | `src/generate.js`, `src/overview.js`, `src/claude.js`, `src/local-report.js` | Writing the report |
+| `src/cloud-providers.js`, `src/cloud-scan-worker.js`, `src/quota-estimate.js`, `src/quota-calibration.js` | Cloud sign-in discovery, model runners and subscription impact estimates |
 | `src/deep-review.js`, `src/deep-stages.js`, `src/deep-git.js` | Prompt evidence, context budgeting, source fingerprints, and independent project reviews |
 | `src/report-store.js`, `src/report-management.js` | Saved runs, revisions, evidence and export history |
 | `src/local-models.js` | Detecting LM Studio and Ollama, GPU memory, context limits |
